@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 use random_choice;
 use sdl2;
 use std::collections::HashMap;
@@ -82,8 +83,8 @@ impl Game {
     }
 }
 
-const WIDTH: u32 = 1280;
-const HEIGHT: u32 = 720;
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
 const CUBE_DIMENSION: u32 = 10;
 
 const SHOWING_WIDTH: u32 = WIDTH + 100;
