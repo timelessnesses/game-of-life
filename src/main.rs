@@ -97,6 +97,7 @@ fn main() {
     let window = video
         .window("Game Of Life", SHOWING_WIDTH, SHOWING_HEIGHT)
         .position_centered()
+        .resizable()
         .build()
         .unwrap();
     let mut canvas = window
