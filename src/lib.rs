@@ -2,7 +2,7 @@
 use random_choice;
 use sdl2;
 use std::collections::HashMap;
-
+use libc;
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 enum LifeState {
     Alive,
@@ -90,7 +90,15 @@ const CUBE_DIMENSION: u32 = 10;
 const SHOWING_WIDTH: u32 = WIDTH + 100;
 const SHOWING_HEIGHT: u32 = HEIGHT + 100;
 
-fn main() {
+#[no_mangle]
+#[allow(non_snake_case)]
+pub extern fn SDL_main(_argc: libc::c_int, _argv: *const *const libc::c_char) -> libc::c_int {
+    entry();
+    return 0
+}
+
+fn entry() {
+    sdl2::hint::set("SDL_VIDEO_EXTERNAL_CONTEXT", "1");
     let ctx = sdl2::init().unwrap();
     let video = ctx.video().unwrap();
 
