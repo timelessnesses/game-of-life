@@ -16,3 +16,6 @@ rev = "7f9f0e44db287e8e67c0e888141bfa200ab45121"
 
 [package.metadata.vcpkg.target]
 x86_64-pc-windows-msvc = { triplet = "x64-windows-static-md" }
+
+[profile.release]
+opt-level = 3
