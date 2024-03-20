@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
-use random_choice;
-use sdl2;
 use std::collections::HashMap;
+
+mod ffmpeg;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 enum LifeState {
@@ -83,19 +83,25 @@ impl Game {
     }
 }
 
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
+const WIDTH: u32 = 1920;
+const HEIGHT: u32 = 1080;
 const CUBE_DIMENSION: u32 = 10;
 
-const SHOWING_WIDTH: u32 = WIDTH + 100;
-const SHOWING_HEIGHT: u32 = HEIGHT + 100;
+const SHOWING_WIDTH: u32 = WIDTH + 150;
+const SHOWING_HEIGHT: u32 = HEIGHT + 10;
+
+const ROBOTO: &[u8; 167000] = include_bytes!("assets/Roboto-Light.ttf");
 
 fn main() {
     let ctx = sdl2::init().unwrap();
     let video = ctx.video().unwrap();
 
     let window = video
-        .window("Game Of Life", SHOWING_WIDTH, SHOWING_HEIGHT)
+        .window(
+            "Game Of Life",
+            SHOWING_WIDTH,
+            SHOWING_HEIGHT
+        )
         .position_centered()
         .resizable()
         .build()
@@ -153,6 +159,44 @@ fn main() {
 
     let mut update_time = std::time::Instant::now();
 
+    let font_ctx = sdl2::ttf::init().unwrap();
+
+    let fps_font = font_ctx
+        .load_font_from_rwops(sdl2::rwops::RWops::from_bytes(ROBOTO).unwrap(), 15)
+        .unwrap();
+
+    // fps stuff
+    let mut ft = std::time::Instant::now(); // frame time
+    let mut fc = 0; // frame count
+    let mut fps = 0.0; // frame per sec
+    let mut mf = 0.0; // maximum fps
+    let mut lf = 0.0; // minimum fps (shows on screen)
+    let mut lpf = 0.0; // act as a cache
+    let mut lft = std::time::Instant::now(); // minimum frame refresh time thingy
+
+    let mut vr: Option<ffmpeg::VideoRecorder>;
+
+    if let Ok(_) = std::env::var("GOL_RECORD") {
+        if let Ok(t) = std::env::var("GOL_RTYPE") {
+            let frame_save = match t.to_ascii_lowercase().as_str() {
+                "disk" => ffmpeg::SavingType::Disk,
+                "memory" => ffmpeg::SavingType::Memory,
+                _ => panic!("Wrong selection of saving frame type"),
+            };
+            vr = Some(ffmpeg::VideoRecorder::new(
+                frame_save,
+                "out.mp4",
+                WIDTH,
+                HEIGHT,
+                video.desktop_display_mode(0).unwrap().refresh_rate as u32,
+            ))
+        } else {
+            vr = None;
+        }
+    } else {
+        vr = None
+    }
+
     'main_loop: loop {
         for e in event.poll_iter() {
             match e {
@@ -164,6 +208,7 @@ fn main() {
                 _ => {}
             }
         }
+        canvas.present();
         canvas.clear();
         // draw cubes
         for life in game.cubes.values() {
@@ -191,11 +236,98 @@ fn main() {
                 )
                 .unwrap();
         }
-        canvas.present();
+        fc += 1;
+        let elapsed_time = ft.elapsed();
+        if elapsed_time.as_secs() >= 1 {
+            fps = fc as f64 / elapsed_time.as_secs_f64();
+            fc = 0;
+            ft = std::time::Instant::now();
+            if fps > mf {
+                mf = fps
+            } else if fps < lpf {
+                lpf = fps
+            }
+        }
+        let elapsed_time = lft.elapsed();
+        if elapsed_time.as_secs() >= 3 {
+            lf = lpf;
+            lpf = fps;
+            lft = std::time::Instant::now();
+        }
         let elasped = update_time.elapsed();
         if elasped.as_millis() >= 500 {
             update_time = std::time::Instant::now();
             game.apply_rules_to_each_lifes();
         }
+        let fps_text = fps_font
+            .render(&format!("FPS: {}", truncate(fps, 2)))
+            .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+            .unwrap();
+        let mf_text = fps_font
+            .render(&format!("Maximum FPS: {}", truncate(mf, 2)))
+            .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+            .unwrap();
+        let lfp_text = fps_font
+            .render(&format!("Minimum FPS: {}", truncate(lf, 2)))
+            .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+            .unwrap();
+        canvas
+            .copy(
+                &tc.create_texture_from_surface(&fps_text).unwrap(),
+                None,
+                sdl2::rect::Rect::new(
+                    (SHOWING_WIDTH - fps_text.width()) as i32,
+                    0,
+                    fps_text.width(),
+                    fps_text.height(),
+                ),
+            )
+            .unwrap();
+        canvas
+            .copy(
+                &tc.create_texture_from_surface(&mf_text).unwrap(),
+                None,
+                sdl2::rect::Rect::new(
+                    (SHOWING_WIDTH - mf_text.width()) as i32,
+                    40,
+                    mf_text.width(),
+                    mf_text.height(),
+                ),
+            )
+            .unwrap();
+        canvas
+            .copy(
+                &tc.create_texture_from_surface(&lfp_text).unwrap(),
+                None,
+                sdl2::rect::Rect::new(
+                    (SHOWING_WIDTH - lfp_text.width()) as i32,
+                    80,
+                    lfp_text.width(),
+                    lfp_text.height(),
+                ),
+            )
+            .unwrap();
+        match vr.as_mut() {
+            Some(v) => {
+                v.save_frame(
+                    canvas
+                        .read_pixels(
+                            sdl2::rect::Rect::new(0, 0, WIDTH, HEIGHT),
+                            sdl2::pixels::PixelFormatEnum::RGB24,
+                        )
+                        .unwrap(),
+                );
+            }
+            None => {}
+        }
     }
+    match vr.as_mut() {
+        Some(v) => {
+            v.process_frames();
+        }
+        None => {}
+    }
+}
+fn truncate(b: f64, precision: usize) -> f64 {
+    f64::trunc(b * ((10 * precision) as f64)) / ((10 * precision) as f64)
 }
