@@ -1,4 +1,3 @@
-
 use std::{io::Write, path::PathBuf};
 
 struct IteratorThroughDiskReadThing {
@@ -10,12 +9,11 @@ impl Iterator for IteratorThroughDiskReadThing {
     fn next(&mut self) -> Option<Self::Item> {
         self.current_index += 1;
         if self.current_index - 1 >= self.files.len() {
-            return None
+            return None;
         }
         let x = std::fs::read(self.files[self.current_index - 1].to_owned()).unwrap();
-        std::fs::remove_file(self.files[self.current_index - 1].to_owned()
-    ).unwrap();
-        return Some(x)
+        std::fs::remove_file(self.files[self.current_index - 1].to_owned()).unwrap();
+        return Some(x);
     }
 }
 
@@ -28,7 +26,9 @@ impl IteratorThroughDiskReadThing {
             ordering.push(file.unwrap().path());
         }
         ordering.sort_by_key(|x| {
-            x.to_str().unwrap().split('\\')
+            x.to_str()
+                .unwrap()
+                .split('\\')
                 .last()
                 .and_then(|s| s.split(".").next())
                 .and_then(|n| n.parse::<i32>().ok())
@@ -60,7 +60,7 @@ pub struct DiskSaver {
 #[derive(Debug, Clone)]
 pub enum Saver {
     Disk(DiskSaver),
-    Memory(MemorySaver)
+    Memory(MemorySaver),
 }
 
 impl DiskSaver {
@@ -83,13 +83,12 @@ impl DiskSaver {
 
     fn get_frames(&self) -> IteratorThroughDiskReadThing {
         let x = IteratorThroughDiskReadThing::new("frames".to_string());
-        return x
+        return x;
     }
 
     fn cleanup(&mut self) {
         std::fs::remove_dir_all("frames").unwrap();
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -123,21 +122,21 @@ impl Saver {
     fn save_frame(&mut self, frame: Vec<u8>) {
         match self {
             Self::Disk(d) => d.save_frame(frame),
-            Self::Memory(m) => m.save_frame(frame)
+            Self::Memory(m) => m.save_frame(frame),
         }
     }
 
     fn get_frames(&self) -> Box<dyn Iterator<Item = Vec<u8>>> {
         match self {
             Self::Disk(d) => Box::new(d.get_frames()),
-            Self::Memory(m) => Box::new(m.get_frames())
+            Self::Memory(m) => Box::new(m.get_frames()),
         }
     }
 
     fn cleanup(&mut self) {
         match self {
             Self::Disk(d) => d.cleanup(),
-            Saver::Memory(m) => m.cleanup()
+            Saver::Memory(m) => m.cleanup(),
         }
     }
 }
@@ -190,7 +189,9 @@ impl VideoRecorder {
             .as_mut()
             .expect("Failed to open FFMpeg stdin");
         for frame in f {
-            stdin.write_all(frame.as_slice()).expect("Failed to write frame");
+            stdin
+                .write_all(frame.as_slice())
+                .expect("Failed to write frame");
         }
         #[allow(dropping_references)]
         drop(stdin);

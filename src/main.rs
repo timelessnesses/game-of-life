@@ -97,11 +97,7 @@ fn main() {
     let video = ctx.video().unwrap();
 
     let window = video
-        .window(
-            "Game Of Life",
-            SHOWING_WIDTH,
-            SHOWING_HEIGHT
-        )
+        .window("Game Of Life", SHOWING_WIDTH, SHOWING_HEIGHT)
         .position_centered()
         .resizable()
         .build()
@@ -332,7 +328,6 @@ fn main() {
         }
         None => {}
     }
-    
 }
 fn truncate(b: f64, precision: usize) -> f64 {
     f64::trunc(b * ((10 * precision) as f64)) / ((10 * precision) as f64)
