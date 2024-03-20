@@ -12,7 +12,10 @@ impl Iterator for IteratorThroughDiskReadThing {
         if self.current_index - 1 >= self.files.len() {
             return None
         }
-        return Some(std::fs::read(self.files[self.current_index - 1].to_owned()).unwrap())
+        let x = std::fs::read(self.files[self.current_index - 1].to_owned()).unwrap();
+        std::fs::remove_file(self.files[self.current_index - 1].to_owned()
+    ).unwrap();
+        return Some(x)
     }
 }
 

@@ -174,6 +174,8 @@ fn main() {
     let mut lpf = 0.0; // act as a cache
     let mut lft = std::time::Instant::now(); // minimum frame refresh time thingy
 
+    let ender = std::time::Instant::now();
+
     let mut vr: Option<ffmpeg::VideoRecorder>;
 
     if let Ok(_) = std::env::var("GOL_RECORD") {
@@ -255,7 +257,7 @@ fn main() {
             lft = std::time::Instant::now();
         }
         let elasped = update_time.elapsed();
-        if elasped.as_millis() >= 500 {
+        if elasped.as_millis() >= 0 {
             update_time = std::time::Instant::now();
             game.apply_rules_to_each_lifes();
         }
@@ -320,6 +322,9 @@ fn main() {
             }
             None => {}
         }
+        if ender.elapsed().as_secs() / 60 >= 10 {
+            break 'main_loop;
+        }
     }
     match vr.as_mut() {
         Some(v) => {
@@ -327,6 +332,7 @@ fn main() {
         }
         None => {}
     }
+    
 }
 fn truncate(b: f64, precision: usize) -> f64 {
     f64::trunc(b * ((10 * precision) as f64)) / ((10 * precision) as f64)
