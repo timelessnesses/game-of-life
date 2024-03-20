@@ -83,8 +83,8 @@ impl Game {
     }
 }
 
-const WIDTH: u32 = 1920;
-const HEIGHT: u32 = 1080;
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
 const CUBE_DIMENSION: u32 = 10;
 
 const SHOWING_WIDTH: u32 = WIDTH + 150;
@@ -179,8 +179,8 @@ fn main() {
     if let Ok(_) = std::env::var("GOL_RECORD") {
         if let Ok(t) = std::env::var("GOL_RTYPE") {
             let frame_save = match t.to_ascii_lowercase().as_str() {
-                "disk" => ffmpeg::SavingType::Disk,
-                "memory" => ffmpeg::SavingType::Memory,
+                "disk" => ffmpeg::Saver::Disk(ffmpeg::DiskSaver::new()),
+                "memory" => ffmpeg::Saver::Memory(ffmpeg::MemorySaver::new()),
                 _ => panic!("Wrong selection of saving frame type"),
             };
             vr = Some(ffmpeg::VideoRecorder::new(

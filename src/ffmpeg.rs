@@ -1,14 +1,7 @@
 
 use std::{io::Write, path::PathBuf};
 
-#[derive(Debug)]
-pub enum SavingType {
-    Disk,
-    Memory,
-}
-
 struct IteratorThroughDiskReadThing {
-    folder: String,
     current_index: usize,
     files: Vec<PathBuf>,
 }
@@ -26,11 +19,21 @@ impl Iterator for IteratorThroughDiskReadThing {
 impl IteratorThroughDiskReadThing {
     fn new(folder_name: String) -> Self {
         let mut things = Vec::new();
-        for file in std::fs::read_dir(&folder_name).unwrap() {
-            things.push(file.unwrap().path());
+        let files = std::fs::read_dir(folder_name).unwrap();
+        let mut ordering = Vec::new();
+        for file in files {
+            ordering.push(file.unwrap().path());
         }
+        ordering.sort_by_key(|x| {
+            x.to_str().unwrap().split('\\')
+                .last()
+                .and_then(|s| s.split(".").next())
+                .and_then(|n| n.parse::<i32>().ok())
+                .unwrap_or(0)
+        });
+        things.append(&mut ordering);
+        println!("{:#?}", things);
         Self {
-            folder: folder_name,
             files: things,
             current_index: 0,
         }
@@ -39,38 +42,35 @@ impl IteratorThroughDiskReadThing {
 
 pub struct VideoRecorder {
     out: String,
-    saver: Box<dyn Saver>,
+    saver: Saver,
     width: u32,
     height: u32,
     fps: u32,
 }
 
-#[derive(Debug)]
-struct DiskSaver {
+#[derive(Debug, Clone)]
+pub struct DiskSaver {
     folder_name: String,
     count: i64,
 }
 
-pub trait Saver {
-    type FramesRT: Iterator<Item = Vec<u8>> + Sized;
-    fn new() -> Self where Self: Sized;
-    fn save_frame(&mut self, frame: Vec<u8>);
-    fn get_frames(&self) -> Self::FramesRT;
-    fn cleanup(&mut self);
+#[derive(Debug, Clone)]
+pub enum Saver {
+    Disk(DiskSaver),
+    Memory(MemorySaver)
 }
 
-impl Saver for DiskSaver {
-    type FramesRT = IteratorThroughDiskReadThing;
+impl DiskSaver {
     fn save_frame(&mut self, frame: Vec<u8>) {
         std::fs::write(format!("{}/{}.frame", self.folder_name, self.count), frame).unwrap();
         self.count += 1;
     }
 
-    fn new() -> Self
+    pub fn new() -> Self
     where
         Self: Sized,
     {
-        std::fs::remove_dir_all("frames");
+        let _ = std::fs::remove_dir_all("frames");
         std::fs::create_dir("frames").unwrap();
         Self {
             folder_name: "frames".to_owned(),
@@ -78,25 +78,24 @@ impl Saver for DiskSaver {
         }
     }
 
-    fn get_frames(&self) -> Self::FramesRT {
+    fn get_frames(&self) -> IteratorThroughDiskReadThing {
         let x = IteratorThroughDiskReadThing::new("frames".to_string());
         return x
     }
 
     fn cleanup(&mut self) {
-        std::fs::remove_dir_all("frames");
+        std::fs::remove_dir_all("frames").unwrap();
     }
 
 }
 
-#[derive(Debug)]
-struct MemorySaver {
+#[derive(Debug, Clone)]
+pub struct MemorySaver {
     frames: Vec<Vec<u8>>,
 }
 
-impl Saver for MemorySaver {
-    type FramesRT = std::vec::IntoIter<Vec<u8>>;
-    fn new() -> Self
+impl MemorySaver {
+    pub fn new() -> Self
     where
         Self: Sized,
     {
@@ -107,24 +106,45 @@ impl Saver for MemorySaver {
         self.frames.push(frame);
     }
 
-    fn get_frames(&self) -> Self::FramesRT {
+    fn get_frames(&self) -> std::vec::IntoIter<Vec<u8>> {
         return self.frames.clone().into_iter();
     }
 
+    #[allow(dropping_references)]
     fn cleanup(&mut self) {
-        drop(self)
+        drop(self);
+    }
+}
+
+impl Saver {
+    fn save_frame(&mut self, frame: Vec<u8>) {
+        match self {
+            Self::Disk(d) => d.save_frame(frame),
+            Self::Memory(m) => m.save_frame(frame)
+        }
+    }
+
+    fn get_frames(&self) -> Box<dyn Iterator<Item = Vec<u8>>> {
+        match self {
+            Self::Disk(d) => Box::new(d.get_frames()),
+            Self::Memory(m) => Box::new(m.get_frames())
+        }
+    }
+
+    fn cleanup(&mut self) {
+        match self {
+            Self::Disk(d) => d.cleanup(),
+            Saver::Memory(m) => m.cleanup()
+        }
     }
 }
 
 impl VideoRecorder {
-    pub fn new(s: SavingType, out: &str, width: u32, height: u32, fps: u32) -> Self {
+    pub fn new(s: Saver, out: &str, width: u32, height: u32, fps: u32) -> Self {
         println!("Recording every frames storing with {:#?}", s);
         Self {
             out: out.to_owned(),
-            saver: match s {
-                SavingType::Disk => Box::new(DiskSaver::new()),
-                SavingType::Memory => Box::new(MemorySaver::new()),
-            },
+            saver: s,
             width,
             height,
             fps,
@@ -132,7 +152,7 @@ impl VideoRecorder {
     }
 
     pub fn save_frame(&mut self, frame: Vec<u8>) {
-        self.saver.save_frame(frame)
+        self.saver.save_frame(frame);
     }
 
     pub fn process_frames(&mut self) {
@@ -169,6 +189,7 @@ impl VideoRecorder {
         for frame in f {
             stdin.write_all(frame.as_slice()).expect("Failed to write frame");
         }
+        #[allow(dropping_references)]
         drop(stdin);
         let _ = ffmpeg_cmd
             .wait_with_output()
