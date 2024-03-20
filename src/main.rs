@@ -257,7 +257,7 @@ fn main() {
             lft = std::time::Instant::now();
         }
         let elasped = update_time.elapsed();
-        if elasped.as_millis() >= 0 {
+        if elasped.as_millis() >= 250 {
             update_time = std::time::Instant::now();
             game.apply_rules_to_each_lifes();
         }
