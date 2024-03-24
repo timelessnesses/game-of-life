@@ -170,11 +170,15 @@ fn main() {
     let mut lpf = 0.0; // act as a cache
     let mut lft = std::time::Instant::now(); // minimum frame refresh time thingy
 
-
     let mut vr: Option<ffmpeg::VideoRecorder> = None;
 
     if let Ok(_) = std::env::var("GOL_RECORD") {
-        vr = Some(ffmpeg::VideoRecorder::new("out.mp4", WIDTH, HEIGHT, video.desktop_display_mode(0).unwrap().refresh_rate as u32));
+        vr = Some(ffmpeg::VideoRecorder::new(
+            "out.mp4",
+            WIDTH,
+            HEIGHT,
+            video.desktop_display_mode(0).unwrap().refresh_rate as u32,
+        ));
     }
 
     'main_loop: loop {
