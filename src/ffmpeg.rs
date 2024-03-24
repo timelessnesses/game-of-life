@@ -25,22 +25,28 @@ impl VideoRecorder {
                 "-preset",
                 "veryslow",
                 "-y",
-                out
+                out,
             ])
             .stdin(std::process::Stdio::piped())
             .spawn()
             .expect("FFMpeg failed to start");
-        Self {
-            ffmpeg: ffmpeg_cmd
-        }
+        Self { ffmpeg: ffmpeg_cmd }
     }
 
     pub fn process_frame(&mut self, frame: Vec<u8>) {
-        self.ffmpeg.stdin.as_mut().unwrap().write_all(frame.as_slice()).unwrap();
+        self.ffmpeg
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(frame.as_slice())
+            .unwrap();
     }
 
     pub fn done(self) {
-        let _ = self.ffmpeg.wait_with_output().expect("Failed to wait for FFMpeg to exit");
+        let _ = self
+            .ffmpeg
+            .wait_with_output()
+            .expect("Failed to wait for FFMpeg to exit");
         println!("Success");
     }
 }
