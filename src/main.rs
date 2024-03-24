@@ -170,29 +170,11 @@ fn main() {
     let mut lpf = 0.0; // act as a cache
     let mut lft = std::time::Instant::now(); // minimum frame refresh time thingy
 
-    let ender = std::time::Instant::now();
 
-    let mut vr: Option<ffmpeg::VideoRecorder>;
+    let mut vr: Option<ffmpeg::VideoRecorder> = None;
 
     if let Ok(_) = std::env::var("GOL_RECORD") {
-        if let Ok(t) = std::env::var("GOL_RTYPE") {
-            let frame_save = match t.to_ascii_lowercase().as_str() {
-                "disk" => ffmpeg::Saver::Disk(ffmpeg::DiskSaver::new()),
-                "memory" => ffmpeg::Saver::Memory(ffmpeg::MemorySaver::new()),
-                _ => panic!("Wrong selection of saving frame type"),
-            };
-            vr = Some(ffmpeg::VideoRecorder::new(
-                frame_save,
-                "out.mp4",
-                WIDTH,
-                HEIGHT,
-                video.desktop_display_mode(0).unwrap().refresh_rate as u32,
-            ))
-        } else {
-            vr = None;
-        }
-    } else {
-        vr = None
+        vr = Some(ffmpeg::VideoRecorder::new("out.mp4", WIDTH, HEIGHT, video.desktop_display_mode(0).unwrap().refresh_rate as u32));
     }
 
     'main_loop: loop {
@@ -307,7 +289,7 @@ fn main() {
             .unwrap();
         match vr.as_mut() {
             Some(v) => {
-                v.save_frame(
+                v.process_frame(
                     canvas
                         .read_pixels(
                             sdl2::rect::Rect::new(0, 0, WIDTH, HEIGHT),
@@ -318,13 +300,10 @@ fn main() {
             }
             None => {}
         }
-        if ender.elapsed().as_secs() / 60 >= 10 {
-            break 'main_loop;
-        }
     }
-    match vr.as_mut() {
+    match vr {
         Some(v) => {
-            v.process_frames();
+            v.done();
         }
         None => {}
     }
