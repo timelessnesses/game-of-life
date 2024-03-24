@@ -1,5 +1,4 @@
 /// FFMpeg rendering module
-
 use std::{self, io::Write};
 
 /// [`VideoRecorder`] struct for wrapping around FFMpeg for rendering video by passing frames in [`Vec<u8>`]
