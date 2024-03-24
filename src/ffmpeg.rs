@@ -44,121 +44,11 @@ impl IteratorThroughDiskReadThing {
 }
 
 pub struct VideoRecorder {
-    out: String,
-    saver: Saver,
-    width: u32,
-    height: u32,
-    fps: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct DiskSaver {
-    folder_name: String,
-    count: i64,
-}
-
-#[derive(Debug, Clone)]
-pub enum Saver {
-    Disk(DiskSaver),
-    Memory(MemorySaver),
-}
-
-impl DiskSaver {
-    fn save_frame(&mut self, frame: Vec<u8>) {
-        std::fs::write(format!("{}/{}.frame", self.folder_name, self.count), frame).unwrap();
-        self.count += 1;
-    }
-
-    pub fn new() -> Self
-    where
-        Self: Sized,
-    {
-        let _ = std::fs::remove_dir_all("frames");
-        std::fs::create_dir("frames").unwrap();
-        Self {
-            folder_name: "frames".to_owned(),
-            count: 0,
-        }
-    }
-
-    fn get_frames(&self) -> IteratorThroughDiskReadThing {
-        let x = IteratorThroughDiskReadThing::new("frames".to_string());
-        return x;
-    }
-
-    fn cleanup(&mut self) {
-        std::fs::remove_dir_all("frames").unwrap();
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MemorySaver {
-    frames: Vec<Vec<u8>>,
-}
-
-impl MemorySaver {
-    pub fn new() -> Self
-    where
-        Self: Sized,
-    {
-        Self { frames: Vec::new() }
-    }
-
-    fn save_frame(&mut self, frame: Vec<u8>) {
-        self.frames.push(frame);
-    }
-
-    fn get_frames(&self) -> std::vec::IntoIter<Vec<u8>> {
-        return self.frames.clone().into_iter();
-    }
-
-    #[allow(dropping_references)]
-    fn cleanup(&mut self) {
-        drop(self);
-    }
-}
-
-impl Saver {
-    fn save_frame(&mut self, frame: Vec<u8>) {
-        match self {
-            Self::Disk(d) => d.save_frame(frame),
-            Self::Memory(m) => m.save_frame(frame),
-        }
-    }
-
-    fn get_frames(&self) -> Box<dyn Iterator<Item = Vec<u8>>> {
-        match self {
-            Self::Disk(d) => Box::new(d.get_frames()),
-            Self::Memory(m) => Box::new(m.get_frames()),
-        }
-    }
-
-    fn cleanup(&mut self) {
-        match self {
-            Self::Disk(d) => d.cleanup(),
-            Saver::Memory(m) => m.cleanup(),
-        }
-    }
+    ffmpeg: std::process::Child,
 }
 
 impl VideoRecorder {
-    pub fn new(s: Saver, out: &str, width: u32, height: u32, fps: u32) -> Self {
-        println!("Recording every frames storing with {:#?}", s);
-        Self {
-            out: out.to_owned(),
-            saver: s,
-            width,
-            height,
-            fps,
-        }
-    }
-
-    pub fn save_frame(&mut self, frame: Vec<u8>) {
-        self.saver.save_frame(frame);
-    }
-
-    pub fn process_frames(&mut self) {
-        let f = self.saver.get_frames();
+    pub fn new(out: &str, width: u32, height: u32, fps: u32) -> Self {
         let mut ffmpeg_cmd = std::process::Command::new("ffmpeg")
             .args([
                 "-f",
@@ -166,9 +56,9 @@ impl VideoRecorder {
                 "-pix_fmt",
                 "rgb24",
                 "-s",
-                &format!("{}x{}", self.width, self.height),
+                &format!("{}x{}", width, height),
                 "-r",
-                &format!("{}", self.fps),
+                &format!("{}", fps),
                 "-i",
                 "pipe:0",
                 "-c:v",
@@ -178,27 +68,22 @@ impl VideoRecorder {
                 "-preset",
                 "veryslow",
                 "-y",
-                self.out.as_str(),
+                out
             ])
             .stdin(std::process::Stdio::piped())
             .spawn()
-            .expect("Failed to start FFMpeg");
-
-        let stdin = ffmpeg_cmd
-            .stdin
-            .as_mut()
-            .expect("Failed to open FFMpeg stdin");
-        for frame in f {
-            stdin
-                .write_all(frame.as_slice())
-                .expect("Failed to write frame");
+            .expect("FFMpeg failed to start");
+        Self {
+            ffmpeg: ffmpeg_cmd
         }
-        #[allow(dropping_references)]
-        drop(stdin);
-        let _ = ffmpeg_cmd
-            .wait_with_output()
-            .expect("Failed to wait FFMpeg to exit");
-        println!("Done");
-        self.saver.cleanup();
+    }
+
+    pub fn process_frame(&mut self, frame: Vec<u8>) {
+        self.ffmpeg.stdin.as_mut().unwrap().write_all(frame.as_slice()).unwrap();
+    }
+
+    pub fn done(self) {
+        let _ = self.ffmpeg.wait_with_output().expect("Failed to wait for FFMpeg to exit");
+        println!("Success");
     }
 }
