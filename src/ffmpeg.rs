@@ -1,10 +1,14 @@
+/// FFMpeg rendering module
+
 use std::{self, io::Write};
 
+/// [`VideoRecorder`] struct for wrapping around FFMpeg for rendering video by passing frames in [`Vec<u8>`]
 pub struct VideoRecorder {
     ffmpeg: std::process::Child,
 }
 
 impl VideoRecorder {
+    /// Spawns new instance of FFMpeg with out file, size and FPS
     pub fn new(out: &str, width: u32, height: u32, fps: u32) -> Self {
         let ffmpeg_cmd = std::process::Command::new("ffmpeg")
             .args([
@@ -33,6 +37,7 @@ impl VideoRecorder {
         Self { ffmpeg: ffmpeg_cmd }
     }
 
+    /// Function for passing the frames to FFMpeg. This doesn't cost a lot performance.
     pub fn process_frame(&mut self, frame: Vec<u8>) {
         self.ffmpeg
             .stdin
@@ -42,6 +47,7 @@ impl VideoRecorder {
             .unwrap();
     }
 
+    /// Finalizing rendering. Wait for FFMpeg to exit
     pub fn done(self) {
         let _ = self
             .ffmpeg

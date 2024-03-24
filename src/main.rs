@@ -1,15 +1,23 @@
 #![windows_subsystem = "windows"]
+
+/// timelessnesses' implementation of Conway's Game Of Life in SDL2.
+
 use std::collections::HashMap;
 
 mod ffmpeg;
 
+/// [`LifeState`] is an enum indicating if [`Life`] is alive or dead
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 enum LifeState {
+    /// Alive
     Alive,
+    /// Died
     Dead,
 }
 
 impl LifeState {
+    /// Random life generator for the [`LifeState`]
     fn random_life_state() -> Self {
         return *random_choice::random_choice().random_choice_f32(
             &vec![LifeState::Alive, LifeState::Dead],
@@ -19,13 +27,18 @@ impl LifeState {
     }
 }
 
+/// Struct representing each cube on screen (we call them [`Life`])
 #[derive(Clone, Copy)]
 struct Life {
+    /// X positon of the cube
     x: i32,
+    /// Y position of the cube
     y: i32,
+    /// Life state of the cube
     state: LifeState,
 }
 
+/// A mapping for neighbor positions. Related to [`Game::get_neighbors`] (I'm sorry I am too stupid to create a function for this.)
 const NEIGHBOR_POSITIONS: [(i32, i32); 8] = [
     (-(CUBE_DIMENSION as i32), -(CUBE_DIMENSION as i32)),
     (-(CUBE_DIMENSION as i32), 0),
@@ -37,11 +50,13 @@ const NEIGHBOR_POSITIONS: [(i32, i32); 8] = [
     ((CUBE_DIMENSION as i32), (CUBE_DIMENSION as i32)),
 ];
 
+/// Main condition and logics happens here
 struct Game {
     cubes: HashMap<(i32, i32), Life>,
 }
 
 impl Game {
+    /// Apply each [`Life`] with new state base on conditions
     fn apply_rules_to_each_lifes(&mut self) {
         let mut apply_new_states = HashMap::new();
         for (pos, life) in &self.cubes {
@@ -70,6 +85,7 @@ impl Game {
         }
     }
 
+    /// Get neighbors around the [`Life`]
     fn get_neighbors(&self, life: &Life) -> Vec<Life> {
         let mut neighbors = Vec::new();
         for (dx, dy) in NEIGHBOR_POSITIONS.iter() {
@@ -83,16 +99,23 @@ impl Game {
     }
 }
 
+/// Game width (Used on [`ffmpeg::VideoRecorder`])
 const WIDTH: u32 = 800;
+/// Game height (Used on [`ffmpeg::VideoRecorder`])
 const HEIGHT: u32 = 600;
+/// Cube size (it will try to fit as much as possible without overfilling)
 const CUBE_DIMENSION: u32 = 10;
 
+// Showing width for showing stuff like FPS text
 const SHOWING_WIDTH: u32 = WIDTH + 150;
+/// Showing height for showing stuff like overfills (round corners sucks)
 const SHOWING_HEIGHT: u32 = HEIGHT + 10;
 
+/// Font
 const ROBOTO: &[u8; 167000] = include_bytes!("assets/Roboto-Light.ttf");
 
 fn main() {
+    // Initialize SDL2
     let ctx = sdl2::init().unwrap();
     let video = ctx.video().unwrap();
 
@@ -113,6 +136,7 @@ fn main() {
 
     let mut cubes: HashMap<(i32, i32), Life> = HashMap::new();
 
+    // Initialize the cubes
     for y in 0..(HEIGHT / CUBE_DIMENSION) as i32 {
         for x in 0..(WIDTH / CUBE_DIMENSION) as i32 {
             cubes.insert(
@@ -126,16 +150,19 @@ fn main() {
         }
     }
 
+    // [`Game`] instance
     let mut game = Game { cubes };
     let tc = canvas.texture_creator();
     canvas.set_draw_color(sdl2::pixels::Color::BLACK);
 
+    // Pre-rendering dead surface color so I can save time (Optimization gaming)
     let mut dead_surface = sdl2::surface::Surface::new(
         CUBE_DIMENSION,
         CUBE_DIMENSION,
         sdl2::pixels::PixelFormatEnum::RGB24,
     )
     .unwrap();
+    // Same reason for [`dead_surface`]
     let mut alive_surface = sdl2::surface::Surface::new(
         CUBE_DIMENSION,
         CUBE_DIMENSION,
@@ -170,6 +197,7 @@ fn main() {
     let mut lpf = 0.0; // act as a cache
     let mut lft = std::time::Instant::now(); // minimum frame refresh time thingy
 
+    // Video initialization (`GOL_RECORD`)
     let mut vr: Option<ffmpeg::VideoRecorder> = None;
 
     if let Ok(_) = std::env::var("GOL_RECORD") {
@@ -194,7 +222,7 @@ fn main() {
         }
         canvas.present();
         canvas.clear();
-        // draw cubes
+        // draw [`Life`]
         for life in game.cubes.values() {
             let color = match life.state {
                 LifeState::Alive => &alive_texture,
@@ -204,6 +232,7 @@ fn main() {
                 sdl2::rect::Rect::new(life.x as i32, life.y as i32, CUBE_DIMENSION, CUBE_DIMENSION);
             canvas.copy(color, None, rect).unwrap();
         }
+        // draw grid
         for y in (0..HEIGHT).step_by(CUBE_DIMENSION as usize) {
             canvas
                 .draw_line(
@@ -220,6 +249,7 @@ fn main() {
                 )
                 .unwrap();
         }
+        // FPS stuff (ignore them)
         fc += 1;
         let elapsed_time = ft.elapsed();
         if elapsed_time.as_secs() >= 1 {
@@ -305,6 +335,7 @@ fn main() {
             None => {}
         }
     }
+    // Done feeding frames. Now showing result
     match vr {
         Some(v) => {
             v.done();
@@ -312,6 +343,8 @@ fn main() {
         None => {}
     }
 }
+
+/// Truncate float with [`precision`] as how many digits you needed in final result
 fn truncate(b: f64, precision: usize) -> f64 {
     f64::trunc(b * ((10 * precision) as f64)) / ((10 * precision) as f64)
 }
