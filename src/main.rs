@@ -1,7 +1,7 @@
 // #![windows_subsystem = "windows"]
+/// timelessnesses' implementation of Conway's Game Of Life in SDL2.
 
 use ctrlc;
-/// timelessnesses' implementation of Conway's Game Of Life in SDL2.
 use std::collections::HashMap;
 
 mod ffmpeg;

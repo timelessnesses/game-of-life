@@ -55,7 +55,7 @@ fn parsery(time: &str) -> std::time::Duration {
         return std::time::Duration::new(0, 0);
     }
     let splitter = time.split(":").collect::<Vec<&str>>();
-    let hour = splitter[0].parse::<u64>().unwrap();
+    let hour = splitter[0].trim_start_matches("-").parse::<u64>().unwrap();
     let minute = splitter[1].parse::<u64>().unwrap();
     let seconds = splitter[2].split(".").collect::<Vec<&str>>();
     return std::time::Duration::new(
