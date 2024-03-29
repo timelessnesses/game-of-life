@@ -69,6 +69,7 @@ impl VideoRecorder {
     pub fn new(out: &str, width: u32, height: u32, fps: u32) -> Self {
         let mut ffmpeg_cmd = std::process::Command::new("ffmpeg")
             .args([
+                "-hide_banner",
                 "-f",
                 "rawvideo",
                 "-pix_fmt",
@@ -86,8 +87,7 @@ impl VideoRecorder {
                 "-preset",
                 "veryslow",
                 "-y",
-                "-progress",
-                "pipe:1",
+                "-progress", "pipe:1",
                 out,
             ])
             .stdin(std::process::Stdio::piped())
@@ -176,7 +176,7 @@ impl VideoRecorder {
         } else {
             match self.ffmpeg.wait() {
                 Ok(_) => println!("Success"),
-                Err(e) => println!("Failed to wait for FFMpeg: {:#?}", e)
+                Err(e) => println!("Failed to wait for FFMpeg: {:#?}", e),
             }
         }
     }
