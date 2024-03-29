@@ -199,7 +199,7 @@ fn main() {
 
     // Video initialization (`GOL_RECORD`)
     let mut vr: Option<std::sync::Arc<std::sync::Mutex<ffmpeg::VideoRecorder>>> = None;
-    let mut length = std::time::Duration::new(0, 0);
+    let mut length: Option<std::time::Duration> = None;
 
     if let Ok(_) = std::env::var("GOL_RECORD") {
         vr = Some(std::sync::Arc::new(std::sync::Mutex::new(
@@ -211,10 +211,11 @@ fn main() {
             ),
         )));
         let cloned_vr = std::sync::Arc::clone(&vr.clone().unwrap());
-        length = humantime::parse_duration(
-            &std::env::var("GOL_LENGTH").expect("Expected GOL_LENGTH to be set"),
-        )
-        .expect("Invalid time string. Take a look at https://docs.rs/humantime/latest/humantime/fn.parse_duration.html");
+        length = if let Ok(time) = std::env::var("GOL_LENGTH") {
+            Some(humantime::parse_duration(&time).expect("Wrong duration format. Please take a look at https://docs.rs/humantime/latest/humantime/fn.parse_duration.html"))
+        } else {
+            None
+        };
         println!("Recording...");
         ctrlc::set_handler(move || {
             cloned_vr.lock().unwrap().kill();
@@ -347,9 +348,11 @@ fn main() {
                         )
                         .unwrap(),
                 );
-                if let Some(status) = v.get_render_status() {
-                    if status.time >= length {
-                        break 'main_loop;
+                if length.is_some() {
+                    if let Some(status) = v.get_render_status() {
+                        if status.time >= length.unwrap() {
+                            break 'main_loop;
+                        }
                     }
                 }
             }
