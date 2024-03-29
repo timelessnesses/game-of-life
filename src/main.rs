@@ -1,5 +1,6 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
+use ctrlc;
 /// timelessnesses' implementation of Conway's Game Of Life in SDL2.
 use std::collections::HashMap;
 
@@ -197,15 +198,30 @@ fn main() {
     let mut lft = std::time::Instant::now(); // minimum frame refresh time thingy
 
     // Video initialization (`GOL_RECORD`)
-    let mut vr: Option<ffmpeg::VideoRecorder> = None;
+    let mut vr: Option<std::sync::Arc<std::sync::Mutex<ffmpeg::VideoRecorder>>> = None;
+    let mut length = std::time::Duration::new(0, 0);
 
     if let Ok(_) = std::env::var("GOL_RECORD") {
-        vr = Some(ffmpeg::VideoRecorder::new(
-            "out.mp4",
-            WIDTH,
-            HEIGHT,
-            video.desktop_display_mode(0).unwrap().refresh_rate as u32,
-        ));
+        vr = Some(std::sync::Arc::new(std::sync::Mutex::new(
+            ffmpeg::VideoRecorder::new(
+                "out.mp4",
+                WIDTH,
+                HEIGHT,
+                video.desktop_display_mode(0).unwrap().refresh_rate as u32,
+            ),
+        )));
+        let cloned_vr = std::sync::Arc::clone(&vr.clone().unwrap());
+        length = humantime::parse_duration(
+            &std::env::var("GOL_LENGTH").expect("Expected GOL_LENGTH to be set"),
+        )
+        .expect("Invalid time string. Take a look at https://docs.rs/humantime/latest/humantime/fn.parse_duration.html");
+        println!("Recording...");
+        ctrlc::set_handler(move || {
+            cloned_vr.lock().unwrap().kill();
+        })
+        .expect("Failed to listen for CTRL-C (Force exiting with FFMpeg)");
+    } else {
+        println!("Playing normally...");
     }
 
     'main_loop: loop {
@@ -322,6 +338,7 @@ fn main() {
             .unwrap();
         match vr.as_mut() {
             Some(v) => {
+                let mut v = v.lock().unwrap();
                 v.process_frame(
                     canvas
                         .read_pixels(
@@ -330,6 +347,11 @@ fn main() {
                         )
                         .unwrap(),
                 );
+                if let Some(status) = v.get_render_status() {
+                    if status.time >= length {
+                        break 'main_loop;
+                    }
+                }
             }
             None => {}
         }
@@ -337,7 +359,8 @@ fn main() {
     // Done feeding frames. Now showing result
     match vr {
         Some(v) => {
-            v.done();
+            let mut a = v.lock().unwrap();
+            a.done();
         }
         None => {}
     }
