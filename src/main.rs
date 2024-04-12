@@ -7,7 +7,6 @@ use std::collections::HashMap;
 mod ffmpeg;
 
 /// [`LifeState`] is an enum indicating if [`Life`] is alive or dead
-
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 enum LifeState {
     /// Alive
@@ -28,7 +27,7 @@ impl LifeState {
 }
 
 /// Struct representing each cube on screen (we call them [`Life`])
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct Life {
     /// X positon of the cube
     x: i32,
@@ -51,6 +50,7 @@ const NEIGHBOR_POSITIONS: [(i32, i32); 8] = [
 ];
 
 /// Main condition and logics happens here
+#[derive(Clone)]
 struct Game {
     cubes: HashMap<(i32, i32), Life>,
 }
@@ -99,10 +99,21 @@ impl Game {
     }
 }
 
+impl PartialEq for Game {
+    fn eq(&self, other: &Self) -> bool {
+        if other.cubes.len() != self.cubes.len() {
+            return false
+        }
+        return self.cubes.iter().all(|(k, v)| {
+            other.cubes.get(k).map_or(false, |ov| v == ov)
+        });
+    }
+}
+
 /// Game width (Used on [`ffmpeg::VideoRecorder`])
-const WIDTH: u32 = 800;
+const WIDTH: u32 = 400;
 /// Game height (Used on [`ffmpeg::VideoRecorder`])
-const HEIGHT: u32 = 600;
+const HEIGHT: u32 = 400;
 /// Cube size (it will try to fit as much as possible without overfilling)
 const CUBE_DIMENSION: u32 = 10;
 
@@ -225,6 +236,11 @@ fn main() {
         println!("Playing normally...");
     }
 
+    // storing old game lifes for comparison if simulation is ended
+    let mut old_game: Option<Game> = None;
+    // these 3 lines switching fuckery is confusing let's skip a frame because yes
+    let mut switchery = false;
+
     'main_loop: loop {
         for e in event.poll_iter() {
             match e {
@@ -285,9 +301,22 @@ fn main() {
             lft = std::time::Instant::now();
         }
         let elasped = update_time.elapsed();
-        if elasped.as_millis() >= 250 {
+        if elasped.as_millis() >= 150 {
             update_time = std::time::Instant::now();
             game.apply_rules_to_each_lifes();
+            if !switchery {
+                switchery = true;
+                if let Some(og) = old_game {
+                    if og == game {
+                        println!("Simulation is ended. Stopping rendering...");
+                        std::thread::sleep(std::time::Duration::new(2, 0));
+                        break 'main_loop;
+                    }
+                }
+                old_game = Some(game.clone());
+            } else {
+                switchery = false;
+            }
         }
         let fps_text = fps_font
             .render(&format!("FPS: {}", truncate(fps, 2)))
@@ -337,6 +366,7 @@ fn main() {
                 ),
             )
             .unwrap();
+
         match vr.as_mut() {
             Some(v) => {
                 let mut v = v.lock().unwrap();
@@ -358,6 +388,7 @@ fn main() {
             }
             None => {}
         }
+
     }
     // Done feeding frames. Now showing result
     match vr {
@@ -367,6 +398,7 @@ fn main() {
         }
         None => {}
     }
+    println!("Exited");
 }
 
 /// Truncate float with [`precision`] as how many digits you needed in final result
