@@ -10,10 +10,10 @@ clap = { version = "4.5.3", features = ["derive"] }
 ctrlc = "3.4.4"
 humantime = "2.1.0"
 random_choice = "0.3.2"
-sdl2 = { version = "0.36.0", features = ["use-vcpkg", "bundled", "ttf"] }
+sdl3 = { version = "0.5.0", features = ["ttf", "bundled"], default-features = false}
 
 [package.metadata.vcpkg]
-dependencies = ["sdl2"]
+dependencies = ["sdl3", "sdl3-ttf"]
 git = "https://github.com/microsoft/vcpkg"
 rev = "7f9f0e44db287e8e67c0e888141bfa200ab45121"
 

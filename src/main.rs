@@ -1,5 +1,5 @@
 // #![windows_subsystem = "windows"]
-/// timelessnesses' implementation of Conway's Game Of Life in SDL2.
+/// timelessnesses' implementation of Conway's Game Of Life in sdl3.
 
 use ctrlc;
 use std::collections::HashMap;
@@ -115,8 +115,8 @@ const SHOWING_HEIGHT: u32 = HEIGHT + 10;
 const ROBOTO: &[u8; 167000] = include_bytes!("assets/Roboto-Light.ttf");
 
 fn main() {
-    // Initialize SDL2
-    let ctx = sdl2::init().unwrap();
+    // Initialize sdl3
+    let ctx = sdl3::init().unwrap();
     let video = ctx.video().unwrap();
 
     let window = video
@@ -153,28 +153,28 @@ fn main() {
     // [`Game`] instance
     let mut game = Game { cubes };
     let tc = canvas.texture_creator();
-    canvas.set_draw_color(sdl2::pixels::Color::BLACK);
+    canvas.set_draw_color(sdl3::pixels::Color::BLACK);
 
     // Pre-rendering dead surface color so I can save time (Optimization gaming)
-    let mut dead_surface = sdl2::surface::Surface::new(
+    let mut dead_surface = sdl3::surface::Surface::new(
         CUBE_DIMENSION,
         CUBE_DIMENSION,
-        sdl2::pixels::PixelFormatEnum::RGB24,
+        sdl3::pixels::PixelFormatEnum::RGB24,
     )
     .unwrap();
     // Same reason for [`dead_surface`]
-    let mut alive_surface = sdl2::surface::Surface::new(
+    let mut alive_surface = sdl3::surface::Surface::new(
         CUBE_DIMENSION,
         CUBE_DIMENSION,
-        sdl2::pixels::PixelFormatEnum::RGB24,
+        sdl3::pixels::PixelFormatEnum::RGB24,
     )
     .unwrap();
 
     dead_surface
-        .fill_rect(None, sdl2::pixels::Color::GREY)
+        .fill_rect(None, sdl3::pixels::Color::GREY)
         .unwrap();
     alive_surface
-        .fill_rect(None, sdl2::pixels::Color::WHITE)
+        .fill_rect(None, sdl3::pixels::Color::WHITE)
         .unwrap();
 
     let dead_texture = tc.create_texture_from_surface(dead_surface).unwrap();
@@ -182,11 +182,14 @@ fn main() {
 
     let mut update_time = std::time::Instant::now();
 
-    let font_ctx = sdl2::ttf::init().unwrap();
+    let font_ctx = sdl3::ttf::init().expect("Failed to initialize font context");
+
+    if sdl3::ttf::has_been_initialized() {
+        println!("SDL3_TTF {}", sdl3::ttf::get_linked_version());
+    }
 
     let fps_font = font_ctx
-        .load_font_from_rwops(sdl2::rwops::RWops::from_bytes(ROBOTO).unwrap(), 15)
-        .unwrap();
+        .load_font_from_rwops(sdl3::rwops::RWops::from_bytes(ROBOTO).unwrap(), 15).expect("Failed to load font");
 
     // fps stuff
     let mut ft = std::time::Instant::now(); // frame time
@@ -228,9 +231,9 @@ fn main() {
     'main_loop: loop {
         for e in event.poll_iter() {
             match e {
-                sdl2::event::Event::Quit { .. }
-                | sdl2::event::Event::KeyDown {
-                    keycode: Some(sdl2::keyboard::Keycode::Escape),
+                sdl3::event::Event::Quit { .. }
+                | sdl3::event::Event::KeyDown {
+                    keycode: Some(sdl3::keyboard::Keycode::Escape),
                     ..
                 } => break 'main_loop,
                 _ => {}
@@ -244,24 +247,23 @@ fn main() {
                 LifeState::Alive => &alive_texture,
                 LifeState::Dead => &dead_texture,
             };
-            let rect =
-                sdl2::rect::Rect::new(life.x as i32, life.y as i32, CUBE_DIMENSION, CUBE_DIMENSION);
+            let rect = sdl3::render::FRect::new(life.x as f32, life.y as f32, CUBE_DIMENSION as f32, CUBE_DIMENSION as f32);
             canvas.copy(color, None, rect).unwrap();
         }
         // draw grid
         for y in (0..HEIGHT).step_by(CUBE_DIMENSION as usize) {
             canvas
                 .draw_line(
-                    sdl2::rect::Point::new(0, y as i32),
-                    sdl2::rect::Point::new(WIDTH as i32, y as i32),
+                    sdl3::rect::Point::new(0, y as i32),
+                    sdl3::rect::Point::new(WIDTH as i32, y as i32),
                 )
                 .unwrap();
         }
         for x in (0..WIDTH).step_by(CUBE_DIMENSION as usize) {
             canvas
                 .draw_line(
-                    sdl2::rect::Point::new(x as i32, 0),
-                    sdl2::rect::Point::new(x as i32, HEIGHT as i32),
+                    sdl3::rect::Point::new(x as i32, 0),
+                    sdl3::rect::Point::new(x as i32, HEIGHT as i32),
                 )
                 .unwrap();
         }
@@ -291,25 +293,25 @@ fn main() {
         }
         let fps_text = fps_font
             .render(&format!("FPS: {}", truncate(fps, 2)))
-            .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+            .shaded(sdl3::pixels::Color::WHITE, sdl3::pixels::Color::BLACK)
             .unwrap();
         let mf_text = fps_font
             .render(&format!("Maximum FPS: {}", truncate(mf, 2)))
-            .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+            .shaded(sdl3::pixels::Color::WHITE, sdl3::pixels::Color::BLACK)
             .unwrap();
         let lfp_text = fps_font
             .render(&format!("Minimum FPS: {}", truncate(lf, 2)))
-            .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+            .shaded(sdl3::pixels::Color::WHITE, sdl3::pixels::Color::BLACK)
             .unwrap();
         canvas
             .copy(
                 &tc.create_texture_from_surface(&fps_text).unwrap(),
                 None,
-                sdl2::rect::Rect::new(
-                    (SHOWING_WIDTH - fps_text.width()) as i32,
-                    0,
-                    fps_text.width(),
-                    fps_text.height(),
+                sdl3::render::FRect::new(
+                    (SHOWING_WIDTH - fps_text.width()) as f32,
+                    0.0,
+                    fps_text.width() as f32,
+                    fps_text.height() as f32,
                 ),
             )
             .unwrap();
@@ -317,11 +319,11 @@ fn main() {
             .copy(
                 &tc.create_texture_from_surface(&mf_text).unwrap(),
                 None,
-                sdl2::rect::Rect::new(
-                    (SHOWING_WIDTH - mf_text.width()) as i32,
-                    40,
-                    mf_text.width(),
-                    mf_text.height(),
+                sdl3::render::FRect::new(
+                    (SHOWING_WIDTH - mf_text.width()) as f32,
+                    40.0,
+                    mf_text.width() as f32,
+                    mf_text.height() as f32,
                 ),
             )
             .unwrap();
@@ -329,11 +331,11 @@ fn main() {
             .copy(
                 &tc.create_texture_from_surface(&lfp_text).unwrap(),
                 None,
-                sdl2::rect::Rect::new(
-                    (SHOWING_WIDTH - lfp_text.width()) as i32,
-                    80,
-                    lfp_text.width(),
-                    lfp_text.height(),
+                sdl3::render::FRect::new(
+                    (SHOWING_WIDTH - lfp_text.width()) as f32,
+                    80.0,
+                    lfp_text.width() as f32,
+                    lfp_text.height() as f32,
                 ),
             )
             .unwrap();
@@ -343,8 +345,8 @@ fn main() {
                 v.process_frame(
                     canvas
                         .read_pixels(
-                            sdl2::rect::Rect::new(0, 0, WIDTH, HEIGHT),
-                            sdl2::pixels::PixelFormatEnum::RGB24,
+                            sdl3::rect::Rect::new(0, 0, WIDTH, HEIGHT),
+                            sdl3::pixels::PixelFormatEnum::RGB24,
                         )
                         .unwrap(),
                 );
