@@ -61,10 +61,10 @@ fn parsery(time: &str) -> std::time::Duration {
     let hour = splitter[0].trim_start_matches("-").parse::<u64>().unwrap();
     let minute = splitter[1].parse::<u64>().unwrap();
     let seconds = splitter[2].split(".").collect::<Vec<&str>>();
-    return std::time::Duration::new(
+    std::time::Duration::new(
         (hour * 60 * 60) + (minute * 60) + seconds[0].parse::<u64>().unwrap(),
         seconds[1].parse::<u32>().unwrap(),
-    );
+    )
 }
 
 impl VideoRecorder {
@@ -147,7 +147,7 @@ impl VideoRecorder {
                 should_return = true;
             }
         }
-        if should_return || status.len() == 0 {
+        if should_return || status.is_empty() {
             return None;
         }
         let status = status
@@ -161,11 +161,11 @@ impl VideoRecorder {
             let k = kvs[0];
             let v = kvs[1].trim();
             match k.trim() {
-                "frame" => st.frame = v.parse().or::<u128>(Ok(0)).unwrap(),
-                "fps" => st.fps = v.parse().or::<f64>(Ok(0.0)).unwrap(),
-                "q" => st.quantizer = v.parse().or::<f64>(Ok(0.0)).unwrap(),
+                "frame" => st.frame = v.parse().unwrap_or(0),
+                "fps" => st.fps = v.parse().unwrap_or(0.0),
+                "q" => st.quantizer = v.parse().unwrap_or(0.0),
                 "out_time" => st.time = parsery(v),
-                "speed" => st.speed = v.trim_end_matches("x").parse().or::<f64>(Ok(0.0)).unwrap(),
+                "speed" => st.speed = v.trim_end_matches("x").parse().unwrap_or(0.0),
                 _ => {}
             }
         }
@@ -186,7 +186,7 @@ impl VideoRecorder {
                 println!(
                     "Waiting for FFMpeg to exit... (Progress: {}%)",
                     self.get_render_status()
-                        .unwrap_or(FFMpegStatus::default())
+                        .unwrap_or_default()
                         .progress
                         * 100.0
                 );

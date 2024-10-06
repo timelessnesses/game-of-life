@@ -1,7 +1,6 @@
 // #![windows_subsystem = "windows"]
 use clap::Parser;
 /// timelessnesses' implementation of Conway's Game Of Life in SDL2.
-use ctrlc;
 use std::collections::HashMap;
 
 mod ffmpeg;
@@ -20,8 +19,8 @@ impl LifeState {
     /// Random life generator for the [`LifeState`]
     fn random_life_state() -> Self {
         return *random_choice::random_choice().random_choice_f32(
-            &vec![LifeState::Alive, LifeState::Dead],
-            &vec![1 as f32, 1 as f32],
+            &[LifeState::Alive, LifeState::Dead],
+            &[1_f32, 1_f32],
             1,
         )[0];
     }
@@ -94,7 +93,7 @@ impl Game {
                 neighbors.push(*n);
             }
         }
-        return neighbors;
+        neighbors
     }
 }
 
@@ -465,7 +464,7 @@ fn main() {
                 LifeState::Alive => &alive_texture,
                 LifeState::Dead => &dead_texture,
             };
-            let rect = sdl2::rect::Rect::new(life.x as i32, life.y as i32, cube_size, cube_size);
+            let rect = sdl2::rect::Rect::new(life.x, life.y, cube_size, cube_size);
             canvas.copy(color, None, rect).unwrap();
         }
         // draw grid
@@ -508,35 +507,32 @@ fn main() {
         if (elasped.as_millis() >= next_simulation as u128 && !record) && run_sim {
             update_time = std::time::Instant::now();
             game.apply_rules_to_each_lifes();
-        } else {
-            if (output_still_frame && record) && run_sim {
+        } else if run_sim {
+            if output_still_frame && record {
                 if elasped.as_millis() >= next_simulation as u128 {
                     update_time = std::time::Instant::now();
                     game.apply_rules_to_each_lifes();
                 }
-            } else if record && run_sim {
+            } else if record {
                 game.apply_rules_to_each_lifes();
             }
-            match vr.as_mut() {
-                Some(v) => {
-                    let mut v = v.lock().unwrap();
-                    v.process_frame(
-                        canvas
-                            .read_pixels(
-                                sdl2::rect::Rect::new(0, 0, width, height),
-                                sdl2::pixels::PixelFormatEnum::RGB24,
-                            )
-                            .unwrap(),
-                    );
-                    if length.is_some() {
-                        if let Some(status) = v.get_render_status() {
-                            if status.time >= length.unwrap() {
-                                break 'main_loop;
-                            }
+            if let Some(v) = vr.as_mut() {
+                let mut v = v.lock().unwrap();
+                v.process_frame(
+                    canvas
+                        .read_pixels(
+                            sdl2::rect::Rect::new(0, 0, width, height),
+                            sdl2::pixels::PixelFormatEnum::RGB24,
+                        )
+                        .unwrap(),
+                );
+                if length.is_some() {
+                    if let Some(status) = v.get_render_status() {
+                        if status.time >= length.unwrap() {
+                            break 'main_loop;
                         }
                     }
                 }
-                None => {}
             }
         }
         let fps_text = fps_font
@@ -591,7 +587,7 @@ fn main() {
         for s in &rendered_status_text {
             canvas
                 .copy(
-                    &s,
+                    s,
                     None,
                     sdl2::rect::Rect::new(
                         (showing_w - s.query().width) as i32,
@@ -603,11 +599,11 @@ fn main() {
                 .unwrap();
             ys += s.query().height + 10;
         }
-        ys = ys + 20;
+        ys += 20;
         for s in &rendered_draw_sim_text {
             canvas
                 .copy(
-                    &s,
+                    s,
                     None,
                     sdl2::rect::Rect::new(
                         (showing_w - s.query().width) as i32,
@@ -619,12 +615,12 @@ fn main() {
                 .unwrap();
             ys += s.query().height + 10;
         }
-        ys = ys + 20;
+        ys += 20;
 
         for s in &rendered_play_sim_text {
             canvas
                 .copy(
-                    &s,
+                    s,
                     None,
                     sdl2::rect::Rect::new(
                         (showing_w - s.query().width) as i32,
@@ -636,12 +632,12 @@ fn main() {
                 .unwrap();
             ys += s.query().height + 10;
         }
-        ys = ys + 20;
+        ys += 20;
 
         for s in &rendered_clear_sim_text {
             canvas
                 .copy(
-                    &s,
+                    s,
                     None,
                     sdl2::rect::Rect::new(
                         (showing_w - s.query().width) as i32,
@@ -653,12 +649,12 @@ fn main() {
                 .unwrap();
             ys += s.query().height + 10;
         }
-        ys = ys + 20;
+        ys += 20;
 
         for s in &rendered_rand_sim_text {
             canvas
                 .copy(
-                    &s,
+                    s,
                     None,
                     sdl2::rect::Rect::new(
                         (showing_w - s.query().width) as i32,
@@ -674,12 +670,9 @@ fn main() {
         canvas.present();
     }
     // Done feeding frames. Now showing result
-    match vr {
-        Some(v) => {
-            let mut a = v.lock().unwrap();
-            a.done();
-        }
-        None => {}
+    if let Some(v) = vr {
+        let mut a = v.lock().unwrap();
+        a.done();
     }
 }
 
