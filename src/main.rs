@@ -2,6 +2,7 @@
 /// timelessnesses' implementation of Conway's Game Of Life in SDL2.
 
 use ctrlc;
+use sdl2::mouse;
 use std::collections::HashMap;
 
 mod ffmpeg;
@@ -21,7 +22,7 @@ impl LifeState {
     fn random_life_state() -> Self {
         return *random_choice::random_choice().random_choice_f32(
             &vec![LifeState::Alive, LifeState::Dead],
-            &vec![5 as f32, 15 as f32],
+            &vec![1 as f32, 1 as f32],
             1,
         )[0];
     }
@@ -100,9 +101,9 @@ impl Game {
 }
 
 /// Game width (Used on [`ffmpeg::VideoRecorder`])
-const WIDTH: u32 = 800;
+const WIDTH: u32 = 1280;
 /// Game height (Used on [`ffmpeg::VideoRecorder`])
-const HEIGHT: u32 = 600;
+const HEIGHT: u32 = 720;
 /// Cube size (it will try to fit as much as possible without overfilling)
 const CUBE_DIMENSION: u32 = 10;
 
@@ -128,7 +129,7 @@ fn main() {
     let mut canvas = window
         .into_canvas()
         .accelerated()
-        .present_vsync()
+        // .present_vsync()
         .build()
         .unwrap();
 
@@ -144,7 +145,7 @@ fn main() {
                 Life {
                     x: x * CUBE_DIMENSION as i32,
                     y: y * CUBE_DIMENSION as i32,
-                    state: LifeState::random_life_state(),
+                    state: LifeState::Dead,
                 },
             );
         }
@@ -225,6 +226,9 @@ fn main() {
         println!("Playing normally...");
     }
 
+    let mut run_sim = false;
+    let mut last_cord = (0, 0);
+
     'main_loop: loop {
         for e in event.poll_iter() {
             match e {
@@ -233,6 +237,62 @@ fn main() {
                     keycode: Some(sdl2::keyboard::Keycode::Escape),
                     ..
                 } => break 'main_loop,
+                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Space), .. } => {
+                    run_sim = true;
+                }
+                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::R), .. } => {
+                    if !run_sim {
+                        game.cubes = {
+                            let mut new_cubes = HashMap::new();
+                            for (pos, life) in game.cubes.iter() {
+                                new_cubes.insert(*pos, Life {
+                                    x: life.x,
+                                    y: life.y,
+                                    state: LifeState::random_life_state(),
+                                });
+                            }
+                            new_cubes
+                        }
+                    }
+                }
+                sdl2::event::Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::C), ..} => {
+                    game.cubes.iter_mut().for_each(|(_, l)| {
+                        l.state = LifeState::Dead;
+                    });
+                }
+                sdl2::event::Event::MouseButtonDown { x, y, mouse_btn, .. } => {
+                    // round them again
+                    let x = x / CUBE_DIMENSION as i32 * CUBE_DIMENSION as i32;
+                    let y = y / CUBE_DIMENSION as i32 * CUBE_DIMENSION as i32;
+                    if let Some(life) = game.cubes.get_mut(&(x, y)) {
+                        if mouse_btn == sdl2::mouse::MouseButton::Left {
+                            life.state = if life.state == LifeState::Alive {
+                                LifeState::Dead
+                            } else {
+                                LifeState::Alive
+                            }
+                        }
+                    }
+                }
+                sdl2::event::Event::MouseMotion { x, y, mousestate, ..} => {
+                    // println!("Mouse at ({}, {})", x, y);
+                    // round those cord to nearest cube
+                    let x = x / CUBE_DIMENSION as i32 * CUBE_DIMENSION as i32;
+                    let y = y / CUBE_DIMENSION as i32 * CUBE_DIMENSION as i32;
+                    if (x, y) == last_cord {
+                        continue;
+                    }
+                    if let Some(life) = game.cubes.get_mut(&(x, y)) {
+                        if mousestate.left() {
+                            life.state = if life.state == LifeState::Alive {
+                                LifeState::Dead
+                            } else {
+                                LifeState::Alive
+                            }
+                        }
+                    }
+                    last_cord = (x, y);
+                }
                 _ => {}
             }
         }
@@ -285,9 +345,11 @@ fn main() {
             lft = std::time::Instant::now();
         }
         let elasped = update_time.elapsed();
-        if elasped.as_millis() >= 250 {
-            update_time = std::time::Instant::now();
-            game.apply_rules_to_each_lifes();
+        if run_sim {
+            if elasped.as_millis() >= 250 {
+                update_time = std::time::Instant::now();
+                game.apply_rules_to_each_lifes();
+            }
         }
         let fps_text = fps_font
             .render(&format!("FPS: {}", truncate(fps, 2)))
