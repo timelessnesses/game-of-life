@@ -505,31 +505,18 @@ fn main() {
             lft = std::time::Instant::now();
         }
         let elasped = update_time.elapsed();
-        if (elasped.as_millis() >= next_simulation as u128 || !output_still_frame) && run_sim {
+        if (elasped.as_millis() >= next_simulation as u128 && !record) && run_sim {
             update_time = std::time::Instant::now();
             game.apply_rules_to_each_lifes();
-            match vr.as_mut() {
-                Some(v) => {
-                    let mut v = v.lock().unwrap();
-                    v.process_frame(
-                        canvas
-                            .read_pixels(
-                                sdl2::rect::Rect::new(0, 0, width, height),
-                                sdl2::pixels::PixelFormatEnum::RGB24,
-                            )
-                            .unwrap(),
-                    );
-                    if length.is_some() {
-                        if let Some(status) = v.get_render_status() {
-                            if status.time >= length.unwrap() {
-                                break 'main_loop;
-                            }
-                        }
-                    }
+        } else {
+            if (output_still_frame && record) && run_sim {
+                if elasped.as_millis() >= next_simulation as u128 {
+                    update_time = std::time::Instant::now();
+                    game.apply_rules_to_each_lifes();
                 }
-                None => {}
+            } else if record && run_sim {
+                game.apply_rules_to_each_lifes();
             }
-        } else if output_still_frame && run_sim {
             match vr.as_mut() {
                 Some(v) => {
                     let mut v = v.lock().unwrap();
