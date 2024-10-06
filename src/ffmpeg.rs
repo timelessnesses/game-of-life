@@ -87,7 +87,8 @@ impl VideoRecorder {
                 "-preset",
                 "veryslow",
                 "-y",
-                "-progress", "pipe:1",
+                "-progress",
+                "pipe:1",
                 out,
             ])
             .stdin(std::process::Stdio::piped())
