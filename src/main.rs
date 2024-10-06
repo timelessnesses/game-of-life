@@ -101,9 +101,6 @@ impl Game {
 #[derive(clap::Parser)]
 #[command(author = "timelessnesses", about = "Nothing")]
 struct Cli {
-    /// Frame limiting
-    #[arg(short, long)]
-    fps: Option<u64>,
     /// List GPU renderers (for the SELECTED_GPU_RENDERER arg)
     #[arg(short, long)]
     list_gpu_renderers: bool,
@@ -123,17 +120,25 @@ struct Cli {
     #[arg(short, long)]
     length: Option<String>,
 
-    /// Width of the window (default: 1920)
+    /// Width of the window (default: 1280)
     #[arg(short, long)]
     width: Option<u32>,
 
-    /// Height of the window (default: 1080)
+    /// Height of the window (default: 720)
     #[arg(short, long)]
     height: Option<u32>,
 
     /// Cube size (default: 10)
     #[arg(short, long)]
     cube_size: Option<u32>,
+
+    /// Also output the frame that sit still instead of outputting every simulated frames
+    #[arg(short, long)]
+    output_still_frame: Option<bool>,
+
+    /// How long until next simulation (in milliseconds)
+    #[arg(short, long)]
+    next_simulation: Option<u64>,
 }
 
 /// Font
@@ -164,6 +169,8 @@ fn main() {
     let vsync = cli.vsync.unwrap_or(false);
     let record = cli.record.unwrap_or(false);
     let length = cli.length.map(|l| humantime::parse_duration(&l).expect("Wrong duration format. Please take a look at https://docs.rs/humantime/latest/humantime/fn.parse_duration.html"));
+    let output_still_frame = cli.output_still_frame.unwrap_or(false);
+    let next_simulation = cli.next_simulation.unwrap_or(250);
 
     // Initialize SDL2
     let ctx = sdl2::init().unwrap();
@@ -176,7 +183,7 @@ fn main() {
         .build()
         .unwrap();
     let mut canvas = window.into_canvas().accelerated();
-    if vsync {
+    if vsync || record {
         canvas = canvas.present_vsync();
     }
     if let Some(renderer) = cli.selected_gpu_renderer {
@@ -234,6 +241,100 @@ fn main() {
         .load_font_from_rwops(sdl2::rwops::RWops::from_bytes(ROBOTO).unwrap(), 15)
         .unwrap();
 
+    let rendered_rand_sim_text = word_wrap(
+        "Press R to get a random grid of lifes",
+        showing_w - width,
+        &fps_font,
+    )
+    .iter()
+    .map(|i| {
+        tc.create_texture_from_surface(
+            fps_font
+                .render(i)
+                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+                .unwrap(),
+        )
+        .unwrap()
+    })
+    .collect::<Vec<_>>();
+    let rendered_clear_sim_text = word_wrap(
+        "Press C to clear the grid of lifes",
+        showing_w - width,
+        &fps_font,
+    )
+    .iter()
+    .map(|i| {
+        tc.create_texture_from_surface(
+            fps_font
+                .render(i)
+                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+                .unwrap(),
+        )
+        .unwrap()
+    })
+    .collect::<Vec<_>>();
+    let rendered_play_sim_text = word_wrap(
+        "Press Space to start the simulation (Will also start recording if it's on)",
+        showing_w - width,
+        &fps_font,
+    )
+    .iter()
+    .map(|i| {
+        tc.create_texture_from_surface(
+            fps_font
+                .render(i)
+                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+                .unwrap(),
+        )
+        .unwrap()
+    })
+    .collect::<Vec<_>>();
+    let rendered_draw_sim_text = word_wrap(
+        "You can hold your left mouse button to draw a shape",
+        showing_w - width,
+        &fps_font,
+    )
+    .iter()
+    .map(|i| {
+        tc.create_texture_from_surface(
+            fps_font
+                .render(i)
+                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+                .unwrap(),
+        )
+        .unwrap()
+    })
+    .collect::<Vec<_>>();
+    let rendered_status_text = word_wrap(
+        &format!(
+            "Recording: {}\nLength: {}\nNext Simulation: {}ms",
+            if record { "ON" } else { "OFF" },
+            if let Some(l) = length {
+                format!(
+                    "{}:{}:{}",
+                    l.as_secs() / 60 / 60,
+                    l.as_secs() / 60,
+                    l.as_secs() % 60
+                )
+            } else {
+                "N/A".to_string()
+            },
+            next_simulation
+        ),
+        showing_w - width,
+        &fps_font,
+    )
+    .iter()
+    .map(|i| {
+        tc.create_texture_from_surface(
+            fps_font
+                .render(i)
+                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+                .unwrap(),
+        )
+        .unwrap()
+    })
+    .collect::<Vec<_>>();
     // fps stuff
     let mut ft = std::time::Instant::now(); // frame time
     let mut fc = 0; // frame count
@@ -256,7 +357,7 @@ fn main() {
             ),
         )));
         let cloned_vr = std::sync::Arc::clone(&vr.clone().unwrap());
-        println!("Recording...");
+        println!("Recording will start once started simulation...");
         ctrlc::set_handler(move || {
             cloned_vr.lock().unwrap().kill();
         })
@@ -404,34 +505,31 @@ fn main() {
             lft = std::time::Instant::now();
         }
         let elasped = update_time.elapsed();
-        if run_sim {
-            if elasped.as_millis() >= 250 || vr.is_none() {
-                update_time = std::time::Instant::now();
-                game.apply_rules_to_each_lifes();
-                match vr.as_mut() {
-                    Some(v) => {
-                        let mut v = v.lock().unwrap();
-                        v.process_frame(
-                            canvas
-                                .read_pixels(
-                                    sdl2::rect::Rect::new(0, 0, width, height),
-                                    sdl2::pixels::PixelFormatEnum::RGB24,
-                                )
-                                .unwrap(),
-                        );
-                        if length.is_some() {
-                            if let Some(status) = v.get_render_status() {
-                                if status.time >= length.unwrap() {
-                                    break 'main_loop;
-                                }
+        if (elasped.as_millis() >= next_simulation as u128 || !output_still_frame) && run_sim {
+            update_time = std::time::Instant::now();
+            game.apply_rules_to_each_lifes();
+            match vr.as_mut() {
+                Some(v) => {
+                    let mut v = v.lock().unwrap();
+                    v.process_frame(
+                        canvas
+                            .read_pixels(
+                                sdl2::rect::Rect::new(0, 0, width, height),
+                                sdl2::pixels::PixelFormatEnum::RGB24,
+                            )
+                            .unwrap(),
+                    );
+                    if length.is_some() {
+                        if let Some(status) = v.get_render_status() {
+                            if status.time >= length.unwrap() {
+                                break 'main_loop;
                             }
                         }
                     }
-                    None => {}
                 }
+                None => {}
             }
-        } else if vr.is_some() && run_sim {
-            game.apply_rules_to_each_lifes();
+        } else if output_still_frame && run_sim {
             match vr.as_mut() {
                 Some(v) => {
                     let mut v = v.lock().unwrap();
@@ -502,6 +600,90 @@ fn main() {
                 ),
             )
             .unwrap();
+        let mut ys = 120u32;
+        for s in &rendered_status_text {
+            canvas
+                .copy(
+                    &s,
+                    None,
+                    sdl2::rect::Rect::new(
+                        (showing_w - s.query().width) as i32,
+                        ys as i32,
+                        s.query().width,
+                        s.query().height,
+                    ),
+                )
+                .unwrap();
+            ys += s.query().height + 10;
+        }
+        ys = ys + 20;
+        for s in &rendered_draw_sim_text {
+            canvas
+                .copy(
+                    &s,
+                    None,
+                    sdl2::rect::Rect::new(
+                        (showing_w - s.query().width) as i32,
+                        ys as i32,
+                        s.query().width,
+                        s.query().height,
+                    ),
+                )
+                .unwrap();
+            ys += s.query().height + 10;
+        }
+        ys = ys + 20;
+
+        for s in &rendered_play_sim_text {
+            canvas
+                .copy(
+                    &s,
+                    None,
+                    sdl2::rect::Rect::new(
+                        (showing_w - s.query().width) as i32,
+                        ys as i32,
+                        s.query().width,
+                        s.query().height,
+                    ),
+                )
+                .unwrap();
+            ys += s.query().height + 10;
+        }
+        ys = ys + 20;
+
+        for s in &rendered_clear_sim_text {
+            canvas
+                .copy(
+                    &s,
+                    None,
+                    sdl2::rect::Rect::new(
+                        (showing_w - s.query().width) as i32,
+                        ys as i32,
+                        s.query().width,
+                        s.query().height,
+                    ),
+                )
+                .unwrap();
+            ys += s.query().height + 10;
+        }
+        ys = ys + 20;
+
+        for s in &rendered_rand_sim_text {
+            canvas
+                .copy(
+                    &s,
+                    None,
+                    sdl2::rect::Rect::new(
+                        (showing_w - s.query().width) as i32,
+                        ys as i32,
+                        s.query().width,
+                        s.query().height,
+                    ),
+                )
+                .unwrap();
+            ys += s.query().height + 10;
+        }
+
         canvas.present();
     }
     // Done feeding frames. Now showing result
@@ -517,4 +699,32 @@ fn main() {
 /// Truncate float with [`precision`] as how many digits you needed in final result
 fn truncate(b: f64, precision: usize) -> f64 {
     f64::trunc(b * ((10 * precision) as f64)) / ((10 * precision) as f64)
+}
+
+fn word_wrap(text: &str, max_width: u32, font: &sdl2::ttf::Font<'_, '_>) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+
+    // Split text by newlines first
+    for raw_line in text.split('\n') {
+        let words = raw_line.split_whitespace();
+        let mut current_line = String::new();
+
+        for word in words {
+            let test_line = current_line.clone() + word + " ";
+            let (test_width, _) = font.size_of(&test_line).unwrap();
+
+            if test_width <= max_width {
+                current_line = test_line;
+            } else {
+                lines.push(current_line.trim_end().to_string());
+                current_line = word.to_owned() + " ";
+            }
+        }
+
+        if !current_line.trim().is_empty() {
+            lines.push(current_line.trim_end().to_string());
+        }
+    }
+
+    lines
 }

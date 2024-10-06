@@ -7,6 +7,7 @@ use std::{
 pub struct VideoRecorder {
     ffmpeg: std::process::Child,
     status_receiver: std::sync::mpsc::Receiver<String>,
+    frame_count: u128,
 }
 
 /// Storing FFMpeg informations on current rendering.  
@@ -20,6 +21,7 @@ pub struct FFMpegStatus {
     pub quantizer: f64,
     pub time: std::time::Duration,
     pub speed: f64,
+    pub progress: f64,
 }
 
 impl Default for FFMpegStatus {
@@ -31,6 +33,7 @@ impl Default for FFMpegStatus {
             quantizer: 0.0,
             time: std::time::Duration::new(0, 0),
             speed: 0.0,
+            progress: 0.0,
         }
     }
 }
@@ -112,6 +115,7 @@ impl VideoRecorder {
         Self {
             ffmpeg: ffmpeg_cmd,
             status_receiver: rx,
+            frame_count: 0,
         }
     }
 
@@ -123,6 +127,7 @@ impl VideoRecorder {
             .unwrap()
             .write_all(frame.as_slice())
             .expect("Pipe is closed.");
+        self.frame_count += 1;
     }
 
     pub fn get_render_status(&mut self) -> Option<FFMpegStatus> {
@@ -164,6 +169,7 @@ impl VideoRecorder {
                 _ => {}
             }
         }
+        st.progress = st.frame as f64 / self.frame_count as f64;
         Some(st)
     }
 
@@ -175,9 +181,15 @@ impl VideoRecorder {
         if let Ok(Some(_)) = self.ffmpeg.try_wait() {
             println!("FFMpeg already exited");
         } else {
-            match self.ffmpeg.wait() {
-                Ok(_) => println!("Success"),
-                Err(e) => println!("Failed to wait for FFMpeg: {:#?}", e),
+            while let Ok(None) = self.ffmpeg.try_wait() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                println!(
+                    "Waiting for FFMpeg to exit... (Progress: {}%)",
+                    self.get_render_status()
+                        .unwrap_or(FFMpegStatus::default())
+                        .progress
+                        * 100.0
+                );
             }
         }
     }
