@@ -123,26 +123,6 @@ fn main() {
     // [`Game`] instance
     let mut game = Game { cubes, cube_size };
     let tc = canvas.texture_creator();
-    canvas.set_draw_color(sdl2::pixels::Color::BLACK);
-
-    // Pre-rendering dead surface color so I can save time (Optimization gaming)
-    let mut dead_surface =
-        sdl2::surface::Surface::new(cube_size, cube_size, sdl2::pixels::PixelFormatEnum::RGB24)
-            .unwrap();
-    // Same reason for [`dead_surface`]
-    let mut alive_surface =
-        sdl2::surface::Surface::new(cube_size, cube_size, sdl2::pixels::PixelFormatEnum::RGB24)
-            .unwrap();
-
-    dead_surface
-        .fill_rect(None, sdl2::pixels::Color::GREY)
-        .unwrap();
-    alive_surface
-        .fill_rect(None, sdl2::pixels::Color::WHITE)
-        .unwrap();
-
-    let dead_texture = tc.create_texture_from_surface(dead_surface).unwrap();
-    let alive_texture = tc.create_texture_from_surface(alive_surface).unwrap();
 
     let mut update_time = std::time::Instant::now();
 
@@ -372,13 +352,14 @@ fn main() {
         canvas.clear();
         // draw [`Life`]
         for life in game.cubes.values() {
-            let color = match life.state {
-                LifeState::Alive => &alive_texture,
-                LifeState::Dead => &dead_texture,
+            match life.state {
+                LifeState::Alive => canvas.set_draw_color(sdl2::pixels::Color::WHITE),
+                LifeState::Dead => canvas.set_draw_color(sdl2::pixels::Color::GREY),
             };
             let rect = sdl2::rect::Rect::new(life.x, life.y, cube_size, cube_size);
-            canvas.copy(color, None, rect).unwrap();
+            canvas.fill_rect(rect).unwrap();
         }
+        canvas.set_draw_color(sdl2::pixels::Color::BLACK);
         // draw grid
         for y in (0..height).step_by(cube_size as usize) {
             canvas
