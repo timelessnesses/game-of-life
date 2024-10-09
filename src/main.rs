@@ -1,6 +1,5 @@
 // #![windows_subsystem = "windows"]
 use clap::Parser;
-use sdl2::sys::Window;
 /// timelessnesses' implementation of Conway's Game Of Life in SDL2.
 use std::collections::HashMap;
 use crate::utils::{word_wrap, truncate};
