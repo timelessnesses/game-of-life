@@ -1,8 +1,8 @@
 // #![windows_subsystem = "windows"]
 use clap::Parser;
-use sdl2::sys::Window;
+use dashmap::DashMap;
+use std::sync::{Arc,Mutex};
 /// timelessnesses' implementation of Conway's Game Of Life in SDL2.
-use std::collections::HashMap;
 use crate::utils::{word_wrap, truncate};
 use crate::core::{Life, LifeState, Game};
 
@@ -105,7 +105,7 @@ fn main() {
 
     let mut event = ctx.event_pump().unwrap();
 
-    let mut cubes: HashMap<(i32, i32), Life> = HashMap::new();
+    let cubes: DashMap<(i32, i32), Life> = DashMap::new();
 
     // Initialize the cubes
     for y in 0..(height / cube_size) as i32 {
@@ -122,28 +122,9 @@ fn main() {
     }
 
     // [`Game`] instance
-    let mut game = Game { cubes, cube_size };
+    let game = Game { cubes, cube_size };
     let tc = canvas.texture_creator();
     canvas.set_draw_color(sdl2::pixels::Color::BLACK);
-
-    // Pre-rendering dead surface color so I can save time (Optimization gaming)
-    let mut dead_surface =
-        sdl2::surface::Surface::new(cube_size, cube_size, sdl2::pixels::PixelFormatEnum::RGB24)
-            .unwrap();
-    // Same reason for [`dead_surface`]
-    let mut alive_surface =
-        sdl2::surface::Surface::new(cube_size, cube_size, sdl2::pixels::PixelFormatEnum::RGB24)
-            .unwrap();
-
-    dead_surface
-        .fill_rect(None, sdl2::pixels::Color::GREY)
-        .unwrap();
-    alive_surface
-        .fill_rect(None, sdl2::pixels::Color::WHITE)
-        .unwrap();
-
-    let dead_texture = tc.create_texture_from_surface(dead_surface).unwrap();
-    let alive_texture = tc.create_texture_from_surface(alive_surface).unwrap();
 
     let mut update_time = std::time::Instant::now();
 
@@ -281,6 +262,21 @@ fn main() {
     let mut run_sim = false;
     let mut last_cord = (0, 0);
 
+    let (tx, rx) = std::sync::mpsc::channel::<bool>();
+    let arced_mutex = Arc::new(Mutex::new(game));
+    let main_game = Arc::clone(&arced_mutex);
+
+    std::thread::spawn(move || {
+        loop {
+            if let Ok(a) = rx.try_recv() {
+                if a { // kill
+                    break;
+                }
+                arced_mutex.lock().unwrap().apply_rules_to_each_lifes();
+            }
+        }
+    });
+
     'main_loop: loop {
         for e in event.poll_iter() {
             match e {
@@ -300,9 +296,10 @@ fn main() {
                     ..
                 } => {
                     if !run_sim {
-                        game.cubes = {
-                            let mut new_cubes = HashMap::new();
-                            for (pos, life) in game.cubes.iter() {
+                        main_game.lock().unwrap().cubes = {
+                            let new_cubes = DashMap::new();
+                            for a in main_game.lock().unwrap().cubes.iter() {
+                                let (pos, life) = a.pair();
                                 new_cubes.insert(
                                     *pos,
                                     Life {
@@ -321,7 +318,7 @@ fn main() {
                     ..
                 } => {
                     if !run_sim {
-                        game.cubes.iter_mut().for_each(|(_, l)| {
+                        main_game.lock().unwrap().cubes.iter_mut().for_each(|mut l| {
                             l.state = LifeState::Dead;
                         });
                     }
@@ -333,7 +330,7 @@ fn main() {
                     if !run_sim {
                         let x = x / cube_size as i32 * cube_size as i32;
                         let y = y / cube_size as i32 * cube_size as i32;
-                        if let Some(life) = game.cubes.get_mut(&(x, y)) {
+                        if let Some(mut life) = main_game.lock().unwrap().cubes.get_mut(&(x, y)) {
                             if mouse_btn == sdl2::mouse::MouseButton::Left {
                                 life.state = if life.state == LifeState::Alive {
                                     LifeState::Dead
@@ -355,7 +352,7 @@ fn main() {
                         if (x, y) == last_cord {
                             continue;
                         }
-                        if let Some(life) = game.cubes.get_mut(&(x, y)) {
+                        if let Some(mut life) = main_game.lock().unwrap().cubes.get_mut(&(x, y)) {
                             if mousestate.left() {
                                 life.state = if life.state == LifeState::Alive {
                                     LifeState::Dead
@@ -372,13 +369,15 @@ fn main() {
         }
         canvas.clear();
         // draw [`Life`]
-        for life in game.cubes.values() {
-            let color = match life.state {
-                LifeState::Alive => &alive_texture,
-                LifeState::Dead => &dead_texture,
+        for life in main_game.lock().unwrap().cubes.iter() {
+
+            match life.state {
+                LifeState::Alive => canvas.set_draw_color(sdl2::pixels::Color::WHITE),
+                LifeState::Dead => canvas.set_draw_color(sdl2::pixels::Color::GREY),
             };
             let rect = sdl2::rect::Rect::new(life.x, life.y, cube_size, cube_size);
-            canvas.copy(color, None, rect).unwrap();
+            canvas.fill_rect(rect).unwrap();
+            canvas.set_draw_color(sdl2::pixels::Color::BLACK);
         }
         // draw grid
         for y in (0..height).step_by(cube_size as usize) {
@@ -401,6 +400,7 @@ fn main() {
         fc += 1;
         let elapsed_time = ft.elapsed();
         if elapsed_time.as_secs() >= 1 {
+            // println!("{fps}");
             fps = fc as f64 / elapsed_time.as_secs_f64();
             fc = 0;
             ft = std::time::Instant::now();
@@ -419,15 +419,17 @@ fn main() {
         let elasped = update_time.elapsed();
         if (elasped.as_millis() >= next_simulation as u128 && !record) && run_sim {
             update_time = std::time::Instant::now();
-            game.apply_rules_to_each_lifes();
+            tx.send(false).unwrap();
         } else if run_sim {
             if output_still_frame && record {
                 if elasped.as_millis() >= next_simulation as u128 {
                     update_time = std::time::Instant::now();
-                    game.apply_rules_to_each_lifes();
+                    // game.apply_rules_to_each_lifes();
+                    tx.send(false).unwrap();
                 }
             } else if record {
-                game.apply_rules_to_each_lifes();
+                // game.apply_rules_to_each_lifes();
+                tx.send(false).unwrap();
             }
             if let Some(v) = vr.as_mut() {
                 let mut v = v.lock().unwrap();
@@ -579,9 +581,9 @@ fn main() {
                 .unwrap();
             ys += s.query().height + 10;
         }
-
         canvas.present();
     }
+    tx.send(true).unwrap();
     // Done feeding frames. Now showing result
     if let Some(v) = vr {
         let mut a = v.lock().unwrap();
