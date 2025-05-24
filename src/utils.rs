@@ -31,3 +31,56 @@ pub fn word_wrap(text: &str, max_width: u32, font: &sdl2::ttf::Font<'_, '_>) -> 
 
     lines
 }
+
+pub fn render_text_as_texture<'a, T>(
+    segments: impl Iterator<Item = (impl AsRef<str> + 'a)>,
+    font: &sdl2::ttf::Font<'a, 'a>,
+    texture_creator: &'a sdl2::render::TextureCreator<T>,
+    shading_color: sdl2::pixels::Color,
+    shading_background: sdl2::pixels::Color,
+) -> Vec<sdl2::render::Texture<'a>> {
+    segments
+        .into_iter()
+        .map(|s| {
+            texture_creator
+                .create_texture_from_surface(
+                    font.render(s.as_ref())
+                        .shaded(shading_color, shading_background)
+                        .unwrap(),
+                )
+                .unwrap()
+        })
+        .collect()
+}
+
+pub fn create_grid_texture<T: sdl2::render::RenderTarget>(
+    canvas: &mut sdl2::render::Canvas<T>,
+    grid_texture: &mut sdl2::render::Texture<'_>,
+    width: u32,
+    height: u32,
+    cube_size: u32,
+) {
+    canvas
+        .with_texture_canvas(grid_texture, |texture| {
+            texture.set_draw_color(sdl2::pixels::Color::RGBA(0, 0, 0, 0));
+            texture.clear();
+            texture.set_draw_color(sdl2::pixels::Color::BLACK);
+            for y in (0..height).step_by(cube_size as usize) {
+                texture
+                    .draw_line(
+                        sdl2::rect::Point::new(0, y as i32),
+                        sdl2::rect::Point::new(width as i32, y as i32),
+                    )
+                    .unwrap();
+            }
+            for x in (0..width).step_by(cube_size as usize) {
+                texture
+                    .draw_line(
+                        sdl2::rect::Point::new(x as i32, 0),
+                        sdl2::rect::Point::new(x as i32, height as i32),
+                    )
+                    .unwrap();
+            }
+        })
+        .unwrap();
+}

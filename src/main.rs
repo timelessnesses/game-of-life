@@ -4,6 +4,7 @@ use crate::utils::{truncate, word_wrap};
 use clap::Parser;
 /// timelessnesses' implementation of Conway's Game Of Life in SDL2.
 use std::collections::HashMap;
+use utils::{create_grid_texture, render_text_as_texture};
 
 mod core;
 mod ffmpeg;
@@ -150,100 +151,80 @@ fn main() {
         .load_font_from_rwops(sdl2::rwops::RWops::from_bytes(ROBOTO).unwrap(), 15)
         .unwrap();
 
-    let rendered_rand_sim_text = word_wrap(
-        "Press R to get a random grid of lifes",
-        showing_w - width,
-        &fps_font,
-    )
-    .iter()
-    .map(|i| {
-        tc.create_texture_from_surface(
-            fps_font
-                .render(i)
-                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
-                .unwrap(),
+    let rendered_rand_sim_text = render_text_as_texture(
+        word_wrap(
+            "Press R to get a random grid of lifes",
+            showing_w - width,
+            &fps_font,
         )
-        .unwrap()
-    })
-    .collect::<Vec<_>>();
-    let rendered_clear_sim_text = word_wrap(
-        "Press C to clear the grid of lifes",
-        showing_w - width,
+        .into_iter(),
         &fps_font,
-    )
-    .iter()
-    .map(|i| {
-        tc.create_texture_from_surface(
-            fps_font
-                .render(i)
-                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
-                .unwrap(),
+        &tc,
+        sdl2::pixels::Color::WHITE,
+        sdl2::pixels::Color::BLACK,
+    );
+    let rendered_clear_sim_text = render_text_as_texture(
+        word_wrap(
+            "Press C to clear the grid of lifes",
+            showing_w - width,
+            &fps_font,
         )
-        .unwrap()
-    })
-    .collect::<Vec<_>>();
-    let mut rendered_play_sim_text = word_wrap(
-        "Press Space to start the simulation (Will also start recording if it's on)",
-        showing_w - width,
+        .into_iter(),
         &fps_font,
-    )
-    .iter()
-    .map(|i| {
-        tc.create_texture_from_surface(
-            fps_font
-                .render(i)
-                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
-                .unwrap(),
+        &tc,
+        sdl2::pixels::Color::WHITE,
+        sdl2::pixels::Color::BLACK,
+    );
+    let mut rendered_play_sim_text = render_text_as_texture(
+        word_wrap(
+            "Press Space to start the simulation (Will also start recording if it's on)",
+            showing_w - width,
+            &fps_font,
         )
-        .unwrap()
-    })
-    .collect::<Vec<_>>();
-    let rendered_draw_sim_text = word_wrap(
-        "You can hold your left mouse button to draw a shape",
-        showing_w - width,
+        .into_iter(),
         &fps_font,
-    )
-    .iter()
-    .map(|i| {
-        tc.create_texture_from_surface(
-            fps_font
-                .render(i)
-                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
-                .unwrap(),
+        &tc,
+        sdl2::pixels::Color::WHITE,
+        sdl2::pixels::Color::BLACK,
+    );
+    let rendered_draw_sim_text = render_text_as_texture(
+        word_wrap(
+            "You can hold your left mouse button to draw a shape",
+            showing_w - width,
+            &fps_font,
         )
-        .unwrap()
-    })
-    .collect::<Vec<_>>();
-    let rendered_status_text = word_wrap(
-        &format!(
-            "Recording: {}\nLength: {}\nNext Simulation: {}ms",
-            if record { "ON" } else { "OFF" },
-            if let Some(l) = length {
-                format!(
-                    "{}:{}:{}",
-                    l.as_secs() / 60 / 60,
-                    l.as_secs() / 60,
-                    l.as_secs() % 60
-                )
-            } else {
-                "N/A".to_string()
-            },
-            next_simulation
-        ),
-        showing_w - width,
+        .into_iter(),
         &fps_font,
-    )
-    .iter()
-    .map(|i| {
-        tc.create_texture_from_surface(
-            fps_font
-                .render(i)
-                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
-                .unwrap(),
+        &tc,
+        sdl2::pixels::Color::WHITE,
+        sdl2::pixels::Color::BLACK,
+    );
+    let rendered_status_text = render_text_as_texture(
+        word_wrap(
+            &format!(
+                "Recording: {}\nLength: {}\nNext Simulation: {}ms",
+                if record { "ON" } else { "OFF" },
+                if let Some(l) = length {
+                    format!(
+                        "{}:{}:{}",
+                        l.as_secs() / 60 / 60,
+                        l.as_secs() / 60,
+                        l.as_secs() % 60
+                    )
+                } else {
+                    "N/A".to_string()
+                },
+                next_simulation
+            ),
+            showing_w - width,
+            &fps_font,
         )
-        .unwrap()
-    })
-    .collect::<Vec<_>>();
+        .into_iter(),
+        &fps_font,
+        &tc,
+        sdl2::pixels::Color::WHITE,
+        sdl2::pixels::Color::BLACK,
+    );
     // fps stuff
     let mut ft = std::time::Instant::now(); // frame time
     let mut fc = 0; // frame count
@@ -279,29 +260,7 @@ fn main() {
         .create_texture(None, sdl2::render::TextureAccess::Target, width, height)
         .unwrap();
     grid_texture.set_blend_mode(sdl2::render::BlendMode::Blend);
-    canvas
-        .with_texture_canvas(&mut grid_texture, |texture| {
-            texture.set_draw_color(sdl2::pixels::Color::RGBA(0, 0, 0, 0));
-            texture.clear();
-            texture.set_draw_color(sdl2::pixels::Color::BLACK);
-            for y in (0..height).step_by(cube_size as usize) {
-                texture
-                    .draw_line(
-                        sdl2::rect::Point::new(0, y as i32),
-                        sdl2::rect::Point::new(width as i32, y as i32),
-                    )
-                    .unwrap();
-            }
-            for x in (0..width).step_by(cube_size as usize) {
-                texture
-                    .draw_line(
-                        sdl2::rect::Point::new(x as i32, 0),
-                        sdl2::rect::Point::new(x as i32, height as i32),
-                    )
-                    .unwrap();
-            }
-        })
-        .unwrap();
+    create_grid_texture(&mut canvas, &mut grid_texture, width, height, cube_size);
 
     let mut cell_texture = tc
         .create_texture_streaming(
@@ -322,29 +281,7 @@ fn main() {
                     ..
                 } => {
                     // no idea why you have to redraw the grid every resizes...
-                    canvas
-                        .with_texture_canvas(&mut grid_texture, |texture| {
-                            texture.set_draw_color(sdl2::pixels::Color::RGBA(0, 0, 0, 0));
-                            texture.clear();
-                            texture.set_draw_color(sdl2::pixels::Color::BLACK);
-                            for y in (0..height).step_by(cube_size as usize) {
-                                texture
-                                    .draw_line(
-                                        sdl2::rect::Point::new(0, y as i32),
-                                        sdl2::rect::Point::new(width as i32, y as i32),
-                                    )
-                                    .unwrap();
-                            }
-                            for x in (0..width).step_by(cube_size as usize) {
-                                texture
-                                    .draw_line(
-                                        sdl2::rect::Point::new(x as i32, 0),
-                                        sdl2::rect::Point::new(x as i32, height as i32),
-                                    )
-                                    .unwrap();
-                            }
-                        })
-                        .unwrap();
+                    create_grid_texture(&mut canvas, &mut grid_texture, width, height, cube_size);
                 }
                 sdl2::event::Event::Quit { .. }
                 | sdl2::event::Event::KeyDown {
@@ -360,22 +297,17 @@ fn main() {
                     } else {
                         run_sim = true;
                     }
-                    rendered_play_sim_text = word_wrap(
-                        if run_sim {"Running simulation. Press Space to pause it. (You can't pause while recording, however.)"} else {"Press Space to start the simulation (Will also start recording if it's on)"},
-                        showing_w - width,
-                        &fps_font,
-                    )
-                    .iter()
-                    .map(|i| {
-                        tc.create_texture_from_surface(
-                            fps_font
-                                .render(i)
-                                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
-                                .unwrap(),
+                    rendered_play_sim_text = render_text_as_texture(word_wrap(
+                            if run_sim {"Running simulation. Press Space to pause it. (You can't pause while recording, however.)"} else {"Press Space to start the simulation (Will also start recording if it's on)"},
+                            showing_w - width,
+                            &fps_font,
                         )
-                        .unwrap()
-                    })
-                    .collect::<Vec<_>>();
+                        .into_iter(),
+                        &fps_font,
+                        &tc,
+                        sdl2::pixels::Color::WHITE,
+                        sdl2::pixels::Color::BLACK,
+                    );
                 }
                 sdl2::event::Event::KeyDown {
                     keycode: Some(sdl2::keyboard::Keycode::R),
@@ -604,8 +536,11 @@ fn main() {
             .unwrap();
         let mut ys = 120u32;
         let groups = [
-            &rendered_clear_sim_text, &rendered_rand_sim_text,
-            &rendered_status_text, &rendered_draw_sim_text, &rendered_play_sim_text,
+            &rendered_clear_sim_text,
+            &rendered_rand_sim_text,
+            &rendered_status_text,
+            &rendered_draw_sim_text,
+            &rendered_play_sim_text,
         ];
         groups.iter().for_each(|g| {
             g.iter().for_each(|s| {

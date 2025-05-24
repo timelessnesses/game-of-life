@@ -123,7 +123,10 @@ impl VideoRecorder {
     }
 
     /// Function for passing the frames to FFMpeg. This doesn't cost a lot performance.
-    pub fn process_frame<F>(&mut self, frame: F) where F: AsRef<[u8]> {
+    pub fn process_frame<F>(&mut self, frame: F)
+    where
+        F: AsRef<[u8]>,
+    {
         self.ffmpeg
             .stdin
             .as_mut()
