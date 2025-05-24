@@ -3,6 +3,7 @@ pub fn truncate(b: f64, precision: usize) -> f64 {
     f64::trunc(b * ((10 * precision) as f64)) / ((10 * precision) as f64)
 }
 
+/// Basic word wrap based on [`sdl2::ttf::Font`] and [`max_width`]
 pub fn word_wrap(text: &str, max_width: u32, font: &sdl2::ttf::Font<'_, '_>) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
 

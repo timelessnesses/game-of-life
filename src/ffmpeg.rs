@@ -3,7 +3,9 @@ use std::{
     self,
     io::{BufRead, Write},
 };
-/// [`VideoRecorder`] struct for wrapping around FFMpeg for rendering video by passing frames in [`Vec<u8>`]
+/// [`VideoRecorder`] struct for wrapping around FFMpeg for rendering video by passing frames in [`u8`] slices
+/// ## Note
+/// the [`u8`] you're passing MUST BE RGB24 encoded
 pub struct VideoRecorder {
     ffmpeg: std::process::Child,
     status_receiver: std::sync::mpsc::Receiver<String>,
@@ -15,6 +17,7 @@ pub struct VideoRecorder {
 /// Going for biggest data type I can do
 #[derive(Debug)]
 pub struct FFMpegStatus {
+    #[allow(dead_code)]
     pub done: bool,
     pub frame: u128,
     pub fps: f64,
@@ -120,12 +123,12 @@ impl VideoRecorder {
     }
 
     /// Function for passing the frames to FFMpeg. This doesn't cost a lot performance.
-    pub fn process_frame(&mut self, frame: Vec<u8>) {
+    pub fn process_frame<F>(&mut self, frame: F) where F: AsRef<[u8]> {
         self.ffmpeg
             .stdin
             .as_mut()
             .unwrap()
-            .write_all(frame.as_slice())
+            .write_all(frame.as_ref())
             .expect("Pipe is closed.");
         self.frame_count += 1;
     }
@@ -185,10 +188,7 @@ impl VideoRecorder {
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 println!(
                     "Waiting for FFMpeg to exit... (Progress: {}%)",
-                    self.get_render_status()
-                        .unwrap_or_default()
-                        .progress
-                        * 100.0
+                    self.get_render_status().unwrap_or_default().progress * 100.0
                 );
             }
         }

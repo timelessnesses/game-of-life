@@ -1,55 +1,55 @@
 // #![windows_subsystem = "windows"]
+use crate::core::{Game, Life, LifeState};
+use crate::utils::{truncate, word_wrap};
 use clap::Parser;
 /// timelessnesses' implementation of Conway's Game Of Life in SDL2.
 use std::collections::HashMap;
-use crate::utils::{word_wrap, truncate};
-use crate::core::{Life, LifeState, Game};
 
+mod core;
 mod ffmpeg;
 mod utils;
-mod core;
 
 #[derive(clap::Parser)]
 #[command(author = "timelessnesses", about = "Nothing")]
 struct Cli {
     /// List GPU renderers (for the SELECTED_GPU_RENDERER arg)
-    #[arg(short, long)]
+    #[arg(long)]
     list_gpu_renderers: bool,
     /// Select your own renderer if you want to
     #[arg(short, long)]
     selected_gpu_renderer: Option<u32>,
 
     /// Force VSync
-    #[arg(short, long)]
-    vsync: Option<bool>,
+    #[arg(short, long, default_value_t = false)]
+    vsync: bool,
 
     /// Record the game to a video file
-    #[arg(short, long)]
-    record: Option<bool>,
+    #[arg(short, long, default_value_t = false)]
+    record: bool,
 
     /// Length of the video file
     #[arg(short, long)]
     length: Option<String>,
 
     /// Width of the window (default: 1280)
-    #[arg(short, long)]
-    width: Option<u32>,
+    #[arg(short, long, default_value_t = 1280)]
+    width: u32,
 
     /// Height of the window (default: 720)
-    #[arg(short, long)]
-    height: Option<u32>,
+    #[arg(long, default_value_t = 720)]
+    height: u32,
 
     /// Cube size (default: 10)
     #[arg(short, long)]
     cube_size: Option<u32>,
 
-    /// Also output the frame that sit still instead of outputting every simulated frames
-    #[arg(short, long)]
-    output_still_frame: Option<bool>,
+    /// Run simulation in every pre-defined time (next_simulation argument) or run simulation in every frames (defaults to run simulation in every pre-defined time)
+    #[arg(short, long, default_value_t = false)]
+    output_still_frame: bool,
 
     /// How long until next simulation (in milliseconds)
-    #[arg(short, long)]
-    next_simulation: Option<u64>,
+    #[arg(short, long, default_value_t = 250)]
+    next_simulation: u64,
 }
 
 /// Font
@@ -60,14 +60,32 @@ fn main() {
     if cli.list_gpu_renderers {
         println!("Available GPU renderers:");
         for (i, r) in sdl2::render::drivers().enumerate() {
+            let mut flags = vec![];
+            if r.flags & 0x00000001 != 0 {
+                flags.push("Software Fallback");
+            }
+            if r.flags & 0x00000002 != 0 {
+                flags.push("Hardware Accelerated");
+            }
+            if r.flags & 0x00000004 != 0 {
+                flags.push("Present Vsync");
+            }
+            if r.flags & 0x00000008 != 0 {
+                flags.push("Target Texture");
+            }
             println!("{}: Renderer: {}", i + 1, r.name);
+            println!("  Texture Formats Supported: {:?}", r.texture_formats);
+            println!("  Max Texture Width: {}", r.max_texture_width);
+            println!("  Max Texture Height: {}", r.max_texture_height);
+            println!("  Rendering Capability: {}", flags.join(", "));
+            println!();
         }
         return;
     }
     // Game width (Used on [`ffmpeg::VideoRecorder`])
-    let width = cli.width.unwrap_or(1280);
+    let width = cli.width;
     // Game height (Used on [`ffmpeg::VideoRecorder`])
-    let height = cli.height.unwrap_or(720);
+    let height = cli.height;
     // Cube size (it will try to fit as much as possible without overfilling)
 
     // Showing width for showing stuff like FPS text
@@ -77,11 +95,11 @@ fn main() {
 
     let cube_size: u32 = cli.cube_size.unwrap_or(10);
 
-    let vsync = cli.vsync.unwrap_or(false);
-    let record = cli.record.unwrap_or(false);
+    let vsync = cli.vsync;
+    let record = cli.record;
     let length = cli.length.map(|l| humantime::parse_duration(&l).expect("Wrong duration format. Please take a look at https://docs.rs/humantime/latest/humantime/fn.parse_duration.html"));
-    let output_still_frame = cli.output_still_frame.unwrap_or(false);
-    let next_simulation = cli.next_simulation.unwrap_or(250);
+    let output_still_frame = cli.output_still_frame;
+    let next_simulation = cli.next_simulation;
 
     // Initialize SDL2
     let ctx = sdl2::init().unwrap();
@@ -164,7 +182,7 @@ fn main() {
         .unwrap()
     })
     .collect::<Vec<_>>();
-    let rendered_play_sim_text = word_wrap(
+    let mut rendered_play_sim_text = word_wrap(
         "Press Space to start the simulation (Will also start recording if it's on)",
         showing_w - width,
         &fps_font,
@@ -257,12 +275,77 @@ fn main() {
         println!("Playing normally...");
     }
 
+    let mut grid_texture = tc
+        .create_texture(None, sdl2::render::TextureAccess::Target, width, height)
+        .unwrap();
+    grid_texture.set_blend_mode(sdl2::render::BlendMode::Blend);
+    canvas
+        .with_texture_canvas(&mut grid_texture, |texture| {
+            texture.set_draw_color(sdl2::pixels::Color::RGBA(0, 0, 0, 0));
+            texture.clear();
+            texture.set_draw_color(sdl2::pixels::Color::BLACK);
+            for y in (0..height).step_by(cube_size as usize) {
+                texture
+                    .draw_line(
+                        sdl2::rect::Point::new(0, y as i32),
+                        sdl2::rect::Point::new(width as i32, y as i32),
+                    )
+                    .unwrap();
+            }
+            for x in (0..width).step_by(cube_size as usize) {
+                texture
+                    .draw_line(
+                        sdl2::rect::Point::new(x as i32, 0),
+                        sdl2::rect::Point::new(x as i32, height as i32),
+                    )
+                    .unwrap();
+            }
+        })
+        .unwrap();
+
+    let mut cell_texture = tc
+        .create_texture_streaming(
+            None,
+            (width / cube_size) as u32,
+            (height / cube_size) as u32,
+        )
+        .unwrap();
+
     let mut run_sim = false;
     let mut last_cord = (0, 0);
 
     'main_loop: loop {
         for e in event.poll_iter() {
             match e {
+                sdl2::event::Event::Window {
+                    win_event: sdl2::event::WindowEvent::Resized(_, _),
+                    ..
+                } => {
+                    // no idea why you have to redraw the grid every resizes...
+                    canvas
+                        .with_texture_canvas(&mut grid_texture, |texture| {
+                            texture.set_draw_color(sdl2::pixels::Color::RGBA(0, 0, 0, 0));
+                            texture.clear();
+                            texture.set_draw_color(sdl2::pixels::Color::BLACK);
+                            for y in (0..height).step_by(cube_size as usize) {
+                                texture
+                                    .draw_line(
+                                        sdl2::rect::Point::new(0, y as i32),
+                                        sdl2::rect::Point::new(width as i32, y as i32),
+                                    )
+                                    .unwrap();
+                            }
+                            for x in (0..width).step_by(cube_size as usize) {
+                                texture
+                                    .draw_line(
+                                        sdl2::rect::Point::new(x as i32, 0),
+                                        sdl2::rect::Point::new(x as i32, height as i32),
+                                    )
+                                    .unwrap();
+                            }
+                        })
+                        .unwrap();
+                }
                 sdl2::event::Event::Quit { .. }
                 | sdl2::event::Event::KeyDown {
                     keycode: Some(sdl2::keyboard::Keycode::Escape),
@@ -272,7 +355,27 @@ fn main() {
                     keycode: Some(sdl2::keyboard::Keycode::Space),
                     ..
                 } => {
-                    run_sim = true;
+                    if !record {
+                        run_sim = !run_sim;
+                    } else {
+                        run_sim = true;
+                    }
+                    rendered_play_sim_text = word_wrap(
+                        if run_sim {"Running simulation. Press Space to pause it. (You can't pause while recording, however.)"} else {"Press Space to start the simulation (Will also start recording if it's on)"},
+                        showing_w - width,
+                        &fps_font,
+                    )
+                    .iter()
+                    .map(|i| {
+                        tc.create_texture_from_surface(
+                            fps_font
+                                .render(i)
+                                .shaded(sdl2::pixels::Color::WHITE, sdl2::pixels::Color::BLACK)
+                                .unwrap(),
+                        )
+                        .unwrap()
+                    })
+                    .collect::<Vec<_>>();
                 }
                 sdl2::event::Event::KeyDown {
                     keycode: Some(sdl2::keyboard::Keycode::R),
@@ -349,34 +452,57 @@ fn main() {
                 _ => {}
             }
         }
+        canvas.set_draw_color(sdl2::pixels::Color::BLACK);
         canvas.clear();
+        canvas.set_draw_color(sdl2::pixels::Color::WHITE);
+
         // draw [`Life`]
-        for life in game.cubes.values() {
-            match life.state {
-                LifeState::Alive => canvas.set_draw_color(sdl2::pixels::Color::WHITE),
-                LifeState::Dead => canvas.set_draw_color(sdl2::pixels::Color::GREY),
-            };
-            let rect = sdl2::rect::Rect::new(life.x, life.y, cube_size, cube_size);
-            canvas.fill_rect(rect).unwrap();
-        }
+        /* canvas.fill_rects(game.cubes.values().filter(|i| {
+            i.state == LifeState::Alive
+        }).map(|i| {
+            sdl2::rect::Rect::new(i.x, i.y, cube_size, cube_size)
+        }).collect::<Vec<_>>().as_slice()).unwrap(); */
+
+        cell_texture
+            .with_lock(None, |buffer: &mut [u8], pitch: usize| {
+                for y in 0..(height / cube_size) as usize {
+                    for x in 0..(width / cube_size) as usize {
+                        let idx = y * pitch + x * 4;
+                        let alive = game.cubes
+                            [&(x as i32 * cube_size as i32, y as i32 * cube_size as i32)]
+                            .state
+                            == LifeState::Alive;
+                        let color = if alive {
+                            sdl2::pixels::Color::WHITE
+                        } else {
+                            sdl2::pixels::Color::GRAY
+                        };
+                        buffer[idx + 0] = color.r;
+                        buffer[idx + 1] = color.g;
+                        buffer[idx + 2] = color.b;
+                        buffer[idx + 3] = color.a;
+                    }
+                }
+            })
+            .unwrap();
+        canvas
+            .copy(
+                &cell_texture,
+                None,
+                sdl2::rect::Rect::new(0, 0, width, height),
+            )
+            .unwrap();
+
         canvas.set_draw_color(sdl2::pixels::Color::BLACK);
         // draw grid
-        for y in (0..height).step_by(cube_size as usize) {
-            canvas
-                .draw_line(
-                    sdl2::rect::Point::new(0, y as i32),
-                    sdl2::rect::Point::new(width as i32, y as i32),
-                )
-                .unwrap();
-        }
-        for x in (0..width).step_by(cube_size as usize) {
-            canvas
-                .draw_line(
-                    sdl2::rect::Point::new(x as i32, 0),
-                    sdl2::rect::Point::new(x as i32, height as i32),
-                )
-                .unwrap();
-        }
+        canvas
+            .copy(
+                &grid_texture,
+                None,
+                sdl2::rect::Rect::new(0, 0, width, height),
+            )
+            .unwrap();
+
         // FPS stuff (ignore them)
         fc += 1;
         let elapsed_time = ft.elapsed();
@@ -412,7 +538,7 @@ fn main() {
             if let Some(v) = vr.as_mut() {
                 let mut v = v.lock().unwrap();
                 v.process_frame(
-                    canvas
+                    &canvas
                         .read_pixels(
                             sdl2::rect::Rect::new(0, 0, width, height),
                             sdl2::pixels::PixelFormatEnum::RGB24,
@@ -477,88 +603,28 @@ fn main() {
             )
             .unwrap();
         let mut ys = 120u32;
-        for s in &rendered_status_text {
-            canvas
-                .copy(
-                    s,
-                    None,
-                    sdl2::rect::Rect::new(
-                        (showing_w - s.query().width) as i32,
-                        ys as i32,
-                        s.query().width,
-                        s.query().height,
-                    ),
-                )
-                .unwrap();
-            ys += s.query().height + 10;
-        }
-        ys += 20;
-        for s in &rendered_draw_sim_text {
-            canvas
-                .copy(
-                    s,
-                    None,
-                    sdl2::rect::Rect::new(
-                        (showing_w - s.query().width) as i32,
-                        ys as i32,
-                        s.query().width,
-                        s.query().height,
-                    ),
-                )
-                .unwrap();
-            ys += s.query().height + 10;
-        }
-        ys += 20;
-
-        for s in &rendered_play_sim_text {
-            canvas
-                .copy(
-                    s,
-                    None,
-                    sdl2::rect::Rect::new(
-                        (showing_w - s.query().width) as i32,
-                        ys as i32,
-                        s.query().width,
-                        s.query().height,
-                    ),
-                )
-                .unwrap();
-            ys += s.query().height + 10;
-        }
-        ys += 20;
-
-        for s in &rendered_clear_sim_text {
-            canvas
-                .copy(
-                    s,
-                    None,
-                    sdl2::rect::Rect::new(
-                        (showing_w - s.query().width) as i32,
-                        ys as i32,
-                        s.query().width,
-                        s.query().height,
-                    ),
-                )
-                .unwrap();
-            ys += s.query().height + 10;
-        }
-        ys += 20;
-
-        for s in &rendered_rand_sim_text {
-            canvas
-                .copy(
-                    s,
-                    None,
-                    sdl2::rect::Rect::new(
-                        (showing_w - s.query().width) as i32,
-                        ys as i32,
-                        s.query().width,
-                        s.query().height,
-                    ),
-                )
-                .unwrap();
-            ys += s.query().height + 10;
-        }
+        let groups = [
+            &rendered_clear_sim_text, &rendered_rand_sim_text,
+            &rendered_status_text, &rendered_draw_sim_text, &rendered_play_sim_text,
+        ];
+        groups.iter().for_each(|g| {
+            g.iter().for_each(|s| {
+                canvas
+                    .copy(
+                        s,
+                        None,
+                        sdl2::rect::Rect::new(
+                            (showing_w - s.query().width) as i32,
+                            ys as i32,
+                            s.query().width,
+                            s.query().height,
+                        ),
+                    )
+                    .unwrap();
+                ys += s.query().height + 10;
+            });
+            ys += 20;
+        });
 
         canvas.present();
     }
@@ -568,4 +634,3 @@ fn main() {
         a.done();
     }
 }
-
